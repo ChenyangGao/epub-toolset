@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin>
+<name>refSameFile</name>
+<type>edit</type>
+<author>ChenyangGao(https://chenyanggao.github.io/)</author>
+<description>把被引用的注释移动到引用它的文件中</description>
+<engine>python3.4</engine>
+<version>0.0.6</version>
+<autostart>true</autostart>
+<autoclose>true</autoclose>
+<oslist>osx,win,unx</oslist>
+</plugin>
