@@ -7,7 +7,7 @@ from typing import (
     Optional, Tuple, Union, 
 )
 
-from lxml.etree import ElementBase # type: ignore
+from lxml.etree import _Element # type: ignore
 from lxml.html import fromstring, tostring # type: ignore
 
 
@@ -22,15 +22,15 @@ class DoNotWriteBack(Exception):
 
 def xhtml_fromstring(
     text: Union[str, bytes], **kwds
-) -> ElementBase:
-    '把一个字符串转换成 lxml.etree.ElementBase 对象'
+) -> _Element:
+    '把一个字符串转换成 lxml.etree._Element 对象'
     return fromstring(text, **kwds)
 
 
 def xhtml_tostring(
-    el: ElementBase, **kwds
+    el: _Element, **kwds
 ) -> bytes:
-    '把一个 lxml.etree.ElementBase 对象的根元素节点转换成字符串'
+    '把一个 lxml.etree._Element 对象的根元素节点转换成字符串'
     roottree = el.getroottree()
     docinfo  = roottree.docinfo
     encoding = docinfo.encoding or 'utf-8'
@@ -95,8 +95,8 @@ def ctx_edit_file(bc, manifest_id: str):
 def ctx_edit_xhtml(
     bc, 
     manifest_id: str, 
-    fromstring: Callable[..., ElementBase] = xhtml_fromstring, 
-    tostring: Callable[[ElementBase], bytes] = xhtml_tostring,
+    fromstring: Callable[..., _Element] = xhtml_fromstring, 
+    tostring: Callable[[_Element], bytes] = xhtml_tostring,
 ):
     '''上下文管理器，可用于修改 Text/*.xhtml，由 xhtml 文件得到一个
     xml 树对象，对它的任何修改，在结束时都会保存到原文件，除非期间发生异常。
@@ -210,9 +210,9 @@ def batch_edit(
 
 def gen_edit_xhtml(
     bc,
-    fromstring: Callable[..., ElementBase] = xhtml_fromstring, 
-    tostring: Callable[[ElementBase], bytes] = xhtml_tostring,
-) -> Generator[ElementBase, Any, None]:
+    fromstring: Callable[..., _Element] = xhtml_fromstring, 
+    tostring: Callable[[_Element], bytes] = xhtml_tostring,
+) -> Generator[_Element, Any, None]:
     '''用于逐个处理 ePub 文件中的 xhtml 文件
 
     :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
@@ -244,9 +244,9 @@ def gen_edit_xhtml(
 
 def batch_edit_xhtml(
     bc, 
-    operate: Callable[[ElementBase], Any],
-    fromstring: Callable[..., ElementBase] = xhtml_fromstring, 
-    tostring: Callable[[ElementBase], bytes] = xhtml_tostring,
+    operate: Callable[[_Element], Any],
+    fromstring: Callable[..., _Element] = xhtml_fromstring, 
+    tostring: Callable[[_Element], bytes] = xhtml_tostring,
 ) -> Dict[str, bool]:
     '''用于逐个处理 ePub 文件中的 xhtml 文件
 
