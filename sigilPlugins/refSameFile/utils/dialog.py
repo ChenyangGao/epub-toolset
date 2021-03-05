@@ -21,8 +21,8 @@ except ImportError:
 
     def message_dialog(title: str= 'Message', message: str = 'Yes or No') -> bool:
         return messagebox.askyesno(title, message)
-finally:
-    import atexit
 
-    atexit.register(app.quit)
+import atexit
+
+atexit.register(app.quit)
 

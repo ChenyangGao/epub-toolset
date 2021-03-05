@@ -4,13 +4,19 @@ __version__ = (0, 0, 1)
 from lxml.etree import ElementBase
 
 from utils.form import ask_form
-from utils.sigil_edit_file import DoNotWriteBack, ctx_edit_xhtml
+from utils.sigil_edit_file import DoNotWriteBack, ctx_edit_html
+
+
+# TODO: 编号策略: inepub, inhtml
+# TODO: 编码格式: 用 %d 指代编号，[%d]:1，表示从 1 开始，产生 [1], [2], ...
 
 
 def replace_notelabel(el: ElementBase, text: str) -> None:
     '修改脚注的标签'
     while el.tag != 'a':
         el = el.getparent()
+        if el is None:
+            return
         if el.tag != 'a':
             a = el.find('.//a')
             if a is not None:
@@ -54,7 +60,7 @@ def run(bc):
         return 1
 
     for fid, _ in bc.text_iter():
-        with ctx_edit_xhtml(bc, fid) as tree:
+        with ctx_edit_html(bc, fid) as tree:
             renumber_notes(tree, **state)
 
     return 0

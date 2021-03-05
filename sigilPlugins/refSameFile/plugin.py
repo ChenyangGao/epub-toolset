@@ -2,13 +2,13 @@ __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
 __version__ = (0, 0, 7)
 
 from contextlib import ExitStack
-from html.parser import unescape
+from html import unescape
 from os.path import basename
 from urllib.parse import urldefrag, unquote
 
 from utils.relationship import is_first_child, is_first_only_descendant
 from utils.dialog import message_dialog
-from utils.sigil_edit_file import ctx_edit_xhtml
+from utils.sigil_edit_file import ctx_edit_html
 
 
 def _clean_space(s):
@@ -21,7 +21,7 @@ def run(bc):
     with ExitStack() as stack:
         path_item_map = {
             unquote(basename(path)):
-                {'id': fid, 'data': stack.enter_context(ctx_edit_xhtml(bc, fid))} 
+                {'id': fid, 'data': stack.enter_context(ctx_edit_html(bc, fid))} 
             for fid, path in bc.text_iter()
         }
 
