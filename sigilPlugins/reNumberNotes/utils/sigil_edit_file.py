@@ -27,7 +27,7 @@ class DoNotWriteBack(Exception):
     '如果对文件改动不需要写回文件，则抛出此异常'
 
 
-def _ensure_bytes(o: Any) -> bool:
+def _ensure_bytes(o: Any) -> bytes:
     if isinstance(o, bytes):
         return o
     elif isinstance(o, str):

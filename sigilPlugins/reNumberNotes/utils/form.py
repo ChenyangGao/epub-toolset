@@ -1,13 +1,13 @@
 import atexit
 import sys
 
-from lxml.etree import XPath
-from lxml.cssselect import CSSSelector
-from PyQt5.QtWidgets import (
+from lxml.etree import XPath # type: ignore
+from lxml.cssselect import CSSSelector # type: ignore
+from PyQt5.QtWidgets import ( # type: ignore
     QApplication, QDialog, QGridLayout, QLabel, QLineEdit, 
     QMessageBox, QRadioButton
 )
-from PyQt5.QtCore import QCoreApplication
+from PyQt5.QtCore import QCoreApplication # type: ignore
 
 
 __all__ = ['ask_form']

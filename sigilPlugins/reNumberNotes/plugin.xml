@@ -5,8 +5,8 @@
 <author>ChenyangGao(https://chenyanggao.github.io/)</author>
 <description>把位于同一页面的脚注进行重新编号</description>
 <engine>python3.4</engine>
-<version>0.0.1</version>
+<version>0.0.2</version>
 <autostart>true</autostart>
-<autoclose>true</autoclose>
+<autoclose>false</autoclose>
 <oslist>osx,win,unx</oslist>
 </plugin>
