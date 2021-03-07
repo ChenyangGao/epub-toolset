@@ -1,5 +1,5 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 2)
+__version__ = (0, 0, 3)
 
 from platform import system
 from contextlib import contextmanager
@@ -13,7 +13,7 @@ from lxml.html import fromstring, tostring, HTMLParser # type: ignore
 
 
 __all__ = ['DoNotWriteBack', 'html_fromstring', 'html_tostring', 'edit_file',
-           'ctx_edit_file', 'ctx_edit_html', 'iter_edit', 'gen_edit', 
+           'ctx_gen_edit', 'ctx_edit', 'ctx_edit_html', 'gen_edit', 'iter_edit', 
            'batch_edit', 'gen_edit_html', 'batch_edit_html']
 
 _PLATFORM_IS_WINDOWS = system() == 'Windows'
@@ -24,10 +24,12 @@ _HTML_PARSER = HTMLParser(default_doctype=False)
 
 
 class DoNotWriteBack(Exception):
-    '如果对文件改动不需要写回文件，则抛出此异常'
+    '''If changes do not require writing back to the file, 
+    you can raise this exception'''
 
 
 def _ensure_bytes(o: Any) -> bytes:
+    'Ensure the return value is `bytes` type'
     if isinstance(o, bytes):
         return o
     elif isinstance(o, str):
@@ -41,14 +43,40 @@ def html_fromstring(
     parser = _HTML_PARSER,
     **kwds
 ) -> _Element:
-    '把一个字符串转换成 lxml.etree._Element 对象'
+    '''Convert a string to `lxml.etree._Element` object 
+    by using `lxml.html.fromstring` function
+
+    Tips: Please refer the following documentation(s) for details
+        - lxml.html.fromstring
+        - lxml.etree.fromstring
+        - lxml.html.HTMLParser
+
+    :params parser: `parser` allows reading HTML into a normal XML tree, 
+        this argument will be passed to `lxml.html.fromstring` function
+    :params kwds: Keyword arguments will be passed to 
+        `lxml.html.fromstring` function
+
+    :return: A single element/document
+    '''
     return fromstring(string, parser=parser, **kwds)
 
 
 def html_tostring(
     el: Union[_Element, _ElementTree], method='html', **kwds
 ) -> bytes:
-    '把一个 lxml.etree._Element 对象的根元素节点转换成字符串'
+    '''Convert a root element node to string 
+    by using `lxml.html.tostring` function
+
+    Tips: Please refer the following documentation(s) for details
+        - lxml.html.tostring
+        - lxml.etree.tostring
+
+    :param method: 
+    :param kwds: Keyword arguments will be passed to 
+        `lxml.html.tostring` function
+
+    :return: An HTML string representation of the document
+    '''
     roottree: _ElementTree = el.getroottree() if isinstance(el, _Element) else el
     root: _Element = roottree.getroot()
     docinfo  = roottree.docinfo
@@ -61,6 +89,8 @@ def html_tostring(
         elif method == 'xml':
             doctype = _XHTML_DOCTYPE
     string = (
+        # However, to be honest, if it is an HTML file, 
+        # it does not need to have a <?xml ?> header
         b'<?xml version="%(xml_version)s" encoding="%(encoding)s"?>'
         b'\n%(doctype)s\n%(doc)s'
     ) % {
@@ -79,65 +109,115 @@ def edit_file(
     manifest_id: str,
     operate: Callable,
 ) -> None:
-    '''读取文件的数据，进行操作，然后把改动后的数据写回
+    '''Read the file data, operate on, and then write the changed data back
 
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
-    :param manifest_id: 清单id，位于 content.opf 文件内，
-        xpath 定位为（下面的 namespace 视具体情况而定）：
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param manifest_id: Manifest id, be located in content.opf file, 
+        The XPath as following (the `namespace` depends on the specific situation):
         /namespace:package/namespace:manifest/namespace:item/@id
-    :param operate: 对数据进行操作，然后返回改动后的数据
+    :param operate: Take data in, operate on, and then return the changed data
     '''
     bc.writefile(manifest_id, operate(bc.readfile(manifest_id)))
 
 
 @contextmanager
-def ctx_edit_file(bc, manifest_id: str):
-    '''上下文管理器，可用于修改文件内容，对文件的修改会在结束时都会保存到原文件，
-    除非期间发生异常。
+def ctx_gen_edit(bc, manifest_id: str):
+    '''Read and yield the file data, and then take in and write back the changed data
 
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
-    :param manifest_id: 清单id，位于 content.opf 文件内，
-        xpath 定位为（下面的 namespace 视具体情况而定）：
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param manifest_id: Manifest id, be located in content.opf file, 
+        The XPath as following (the `namespace` depends on the specific situation):
         /namespace:package/namespace:manifest/namespace:item/@id
 
-    使用方式形如：
-        with edit_file(bc, manifest_id) as data:
+    :return: The context manager that returns the `data`
+        data := bc.readfile(manifest_id)
+
+    Example::
+        def operations_on_content(data_old):
+            ...
+            return data_new
+
+        ctx = ctx_gen_edit(bc, manifest_id)
+        with ctx as content:
+            content_new = operations_on_content(content)
+            if content != content_new:
+                ctx.gen.send(content_new)
+    '''
+    try:
+        result = yield bc.readfile(manifest_id)
+    except DoNotWriteBack:
+        yield None
+    else:
+        if result is not None:
+            bc.writefile(manifest_id, result)
+            yield None
+
+
+@contextmanager
+def ctx_edit(bc, manifest_id: str):
+    '''Read and yield the file data, and then take in and write back the changed data
+
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param manifest_id: Manifest id, be located in content.opf file, 
+        The XPath as following (the `namespace` depends on the specific situation):
+        /namespace:package/namespace:manifest/namespace:item/@id
+
+    :return: The context manager that returns the `data`
+        data := {'manifest_id': manifest_id, 'data': bc.readfile(manifest_id)}
+
+    Example::
+        def operations_on_content(data_old):
+            ...
+            return data_new
+
+        with ctx_edit(bc, manifest_id) as data:
             content = data['data']
             content_new = operations_on_content(content)
             if content == content_new:
-                raise DoNotWriteBack
-            data['data'] = content_new
+                del data['data']
+                # OR raise DoNotWriteBack
+            else:
+                data['data'] = content_new
     '''
     data = {'manifest_id': manifest_id, 'data': bc.readfile(manifest_id)}
     try:
-        yield data
+        if (yield data) is not None or data.get('data') is None:
+            raise DoNotWriteBack
     except DoNotWriteBack:
         pass
     else:
-        if data.get('data') is not None:
-            bc.writefile(manifest_id, data['data'])
+        bc.writefile(manifest_id, data['data'])
 
 
 @contextmanager
 def ctx_edit_html(bc, manifest_id: str):
-    '''上下文管理器，可用于修改 Text/*.xhtml，由 xhtml 文件得到一个
-    xml 树对象，对它的任何修改，在结束时都会保存到原文件，除非期间发生异常。
+    '''Read and yield the etree object (parsed from a html file), 
+    and then write back the above etree object.
 
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
-    :param manifest_id: 清单id，位于 content.opf 文件内，
-        xpath 定位为（下面的 namespace 视具体情况而定）：
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param manifest_id: Manifest id, be located in content.opf file, 
+        The XPath as following (the `namespace` depends on the specific situation):
         /namespace:package/namespace:manifest/namespace:item/@id
 
-    使用方式形如：
-        with edit_xhtml(bc, manifest_id) as etree:
+    Example::
+        def operations_on_etree(etree):
+            ...
+
+        with ctx_edit_html(bc, manifest_id) as etree:
             operations_on_etree(etree)
     '''
     tree = html_fromstring(bc.readfile(manifest_id).encode('utf-8'))
     try:
-        yield tree
+        if (yield tree) is not None:
+            raise DoNotWriteBack
     except DoNotWriteBack:
         pass
     else:
@@ -148,44 +228,24 @@ def ctx_edit_html(bc, manifest_id: str):
         )
 
 
-def iter_edit(
-    bc, manifest_id_s: Iterable[str]
-) -> Generator[dict, Any, None]:
-    '''用于逐个处理在 ePub 文件中的一组指定文件
-
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
-    :param manifest_id_s: 一组清单 id，清单 id 位于 content.opf 文件内，
-        xpath 定位为（下面的 namespace 视具体情况而定）：
-        /namespace:package/namespace:manifest/namespace:item/@id
-
-    使用方式形如：
-        for data in iter_edit(bc, ('id1', 'id2')):
-            content = data['data']
-            content_new = operations_on_content(content)
-            if content == content_new:
-                del data['data']
-            else:
-                data['data'] = content_new
-    '''
-    for fid in manifest_id_s:
-        with ctx_edit_file(bc, fid) as data:
-            yield data
-
-
 def gen_edit(
     bc, manifest_id_s: Iterable[str]
-) -> Generator[Union[bytes, str], Optional[Union[bytes, str]], None]:
-    '''用于逐个处理在 ePub 文件中的一组指定文件
+) -> Generator[Union[None, bytes, str], Optional[Union[bytes, str]], None]:
+    '''Used to process a collection of specified files in ePub file one by one
 
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
-    :param manifest_id_s: 一组清单 id，清单 id 位于 content.opf 文件内，
-        xpath 定位为（下面的 namespace 视具体情况而定）：
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param manifest_id_s: Manifest id collection, be located in content.opf file,
+        The XPath as following (the `namespace` depends on the specific situation):
         /namespace:package/namespace:manifest/namespace:item/@id
 
-    使用方式形如：
-        edit_worker = iter_edit(bc, ('id1', 'id2'))
+    Example::
+        def operations_on_content(data_old):
+            ...
+            return data_new
+
+        edit_worker = gen_edit(bc, ('id1', 'id2'))
         for content in edit_worker:
             content_new = operations_on_content(content)
             if content != content_new:
@@ -195,11 +255,46 @@ def gen_edit(
         try:
             result = yield bc.readfile(fid)
         except DoNotWriteBack:
-            yield ''
+            yield None
         else:
             if result is not None:
                 bc.writefile(fid, result)
-                yield ''
+                yield None
+
+
+def iter_edit(
+    bc, manifest_id_s: Iterable[str]
+) -> Generator[Optional[dict], Any, None]:
+    '''Used to process a collection of specified files in ePub file one by one
+
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param manifest_id_s: Manifest id collection, be located in content.opf file,
+        The XPath as following (the `namespace` depends on the specific situation):
+        /namespace:package/namespace:manifest/namespace:item/@id
+
+    Example::
+        def operations_on_content(data_old):
+            ...
+            return data_new
+
+        for data in iter_edit(bc, ('id1', 'id2')):
+            content = data['data']
+            content_new = operations_on_content(content)
+            if content == content_new:
+                del data['data']
+            else:
+                data['data'] = content_new
+    '''
+    for fid in manifest_id_s:
+        op = 0
+        with ctx_edit(bc, fid) as data:
+            op = yield data
+            if op is not None:
+                raise DoNotWriteBack
+        while op is not None:
+            op = yield None
 
 
 def batch_edit(
@@ -207,76 +302,79 @@ def batch_edit(
     manifest_id_s: Iterable[str], 
     operate: Callable,
 ) -> Dict[str, bool]:
-    '''用于逐个处理在 ePub 文件中的一组指定文件
+    '''Used to process a collection of specified files in ePub file one by one
 
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
-    :param manifest_id_s: 一组清单 id，清单 id 位于 content.opf 文件内，
-        xpath 定位为（下面的 namespace 视具体情况而定）：
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param manifest_id_s: Manifest id collection, be located in content.opf file,
+        The XPath as following (the `namespace` depends on the specific situation):
         /namespace:package/namespace:manifest/namespace:item/@id
-    :param operate: 对数据进行操作，然后返回改动后的数据
+    :param operate: Take data in, operate on, and then return the changed data
 
-    使用方式形如：
+    Example::
+        def operations_on_content(data_old):
+            ...
+            return data_new
+
         batch_edit(bc, ('id1', 'id2'), operations_on_content)
     '''
     success_status: Dict[str, bool] = {}
     for fid in manifest_id_s:
         try:
-            result = operate(bc.readfile(fid))
-            if result is not None:
-                bc.writefile(fid, result)
-            success_status[fid] = True
-        except DoNotWriteBack:
+            with ctx_edit(bc, fid) as data:
+                data['data'] = operate(data['data'])
             success_status[fid] = True
         except:
             success_status[fid] = False
     return success_status
 
 
-def gen_edit_html(bc) -> Generator[_Element, Any, None]:
-    '''用于逐个处理 ePub 文件中的 xhtml 文件
+def gen_edit_html(bc) -> Generator[Optional[_Element], Any, None]:
+    '''Used to process a collection of specified html files in ePub file one by one
 
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
 
-    使用方式形如：
-        edit_worker = gen_edit_xhtml(bc, ('id1', 'id2'))
-        for tree in edit_worker:
-            operations_on_tree(tree)
+    Example::
+        def operations_on_etree(etree):
+            ...
+
+        edit_worker = gen_edit_html(bc)
+        for etree in edit_worker:
+            operations_on_etree(etree)
             ## if no need to write back
             # edit_worker.throw(DoNotWriteBack)
             ## OR
-            # edit_worker.send(1)
+            # edit_worker.send(0)
     '''
     for fid, _ in bc.text_iter():
-        tree = html_fromstring(bc.readfile(fid).encode('utf-8'))
-        try:
+        op = 0
+        with ctx_edit_html(bc, fid) as tree:
             op = yield tree
-        except DoNotWriteBack:
-            yield
-        else:
             if op is not None:
-                yield
-            else:
-                method = 'xml' if 'xhtml' in bc.id_to_mime(fid) else 'html'
-                bc.writefile(
-                    fid, 
-                    html_fromstring(tree, method=method).decode('utf-8')
-                )
+                raise DoNotWriteBack
+        while op is not None:
+            op = yield None
 
 
 def batch_edit_html(
     bc, 
     operate: Callable[[_Element], Any],
 ) -> Dict[str, bool]:
-    '''用于逐个处理 ePub 文件中的 xhtml 文件
+    '''Used to process a collection of specified html files in ePub file one by one
 
-    :param bc: BookContainer 对象，由 Sigil 提供的 epub 书籍内容的一个对象，
-        可以利用它访问并操作 epub 内的文件
-    :param operate: 对 xhtml 树对象进行处理
+    :param bc: `BookContainer` object. 
+        An object of ePub book content provided by Sigil, 
+        which can be used to access and operate the files in ePub
+    :param operate: Take etree object in, operate on
 
-    使用方式形如：
-        batch_edit_xhtml(bc, operations_on_tree)
+    Example::
+        def operations_on_etree(etree):
+            ...
+
+        batch_edit_html(bc, operations_on_etree)
     '''
     success_status: Dict[str, bool] = {}
     for fid, _ in bc.text_iter():

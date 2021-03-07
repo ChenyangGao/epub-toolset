@@ -49,6 +49,7 @@ def run(bc):
                 # 假设：某个脚注的 id 和 href 可能分别位于不同的元素节点中，必须保证包含 id 的元素节点
                 #      **不位于**包含 href 的元素节点之外或者之后，如果互为兄弟节点则这两者是紧邻的
                 #      （中间没有穿插其它元素节点）
+                # 技巧：在无命名空间时，descendant-or-self::*[@href] 相当于 css 选择器 a[href]
                 hrefs = noteref.xpath(
                     'descendant-or-self::*[local-name(.) = "a" and @href]/@href')
                 if not hrefs:

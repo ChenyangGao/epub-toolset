@@ -9,7 +9,8 @@ from utils.sigil_edit_file import DoNotWriteBack, ctx_edit_html
 
 
 # TODO: 编号策略: inepub, inhtml
-# TODO: 编号格式: 用 %d 指代编号，[%d]:1，表示从 1 开始，产生 [1], [2], ...
+# TODO: 编号格式: 用 %d 指代编号，[%d]:1，表示从 1 开始，产生 [1], [2], ...，也支持自动ol
+# TODO: 提供多个复选框，[] 尝试转换为epub3弹注 [] 
 
 
 def replace_notelabel(el: _Element, text: str) -> None:
