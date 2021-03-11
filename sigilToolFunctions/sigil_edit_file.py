@@ -1,5 +1,5 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 3)
+__version__ = (0, 0, 4)
 
 from platform import system
 from contextlib import contextmanager
@@ -9,7 +9,7 @@ from typing import (
 )
 
 from lxml.etree import _Element, _ElementTree # type: ignore
-from lxml.html import fromstring, tostring, HTMLParser # type: ignore
+from lxml.html import fromstring, tostring, Element, HTMLParser # type: ignore
 
 
 __all__ = ['DoNotWriteBack', 'html_fromstring', 'html_tostring', 'edit_file',
@@ -58,7 +58,24 @@ def html_fromstring(
 
     :return: A single element/document
     '''
-    return fromstring(string, parser=parser, **kwds)
+    if not string.strip():
+        return fromstring(
+            b'<html>\n    <head/>\n    <body/>\n</html>', 
+            parser=parser, **kwds)
+    tree = fromstring(string, parser=parser, **kwds)
+    # get root element
+    for tree in tree.iterancestors(): pass
+    if tree.find('head') is None:
+        el = Element('head')
+        el.text = ' '
+        el.tail = '\n'
+        tree.insert(0, el)
+    if tree.find('body') is None:
+        el = Element('body')
+        el.text = ' '
+        el.tail = '\n'
+        tree.append(el)
+    return tree
 
 
 def html_tostring(
@@ -71,8 +88,10 @@ def html_tostring(
         - lxml.html.tostring
         - lxml.etree.tostring
 
-    :param method: 
-    :param kwds: Keyword arguments will be passed to 
+    :param method: defines the output method.
+        It defaults to 'html', but can also be 'xml' or 'xhtml' for xhtml output, 
+        or 'text' to serialise to plain text without markup.
+    :param kwds: Keyword arguments `kwds` will be passed to 
         `lxml.html.tostring` function
 
     :return: An HTML string representation of the document
@@ -83,11 +102,15 @@ def html_tostring(
     encoding = kwds.get('encoding', docinfo.encoding)
     kwds.setdefault('encoding', encoding)
     doctype = kwds.pop('doctype', docinfo.doctype)
+
     if not doctype:
         if method == 'html':
             doctype = _HTML_DOCTYPE
-        elif method == 'xml':
+        elif method == 'xhtml':
             doctype = _XHTML_DOCTYPE
+
+    if method == 'xhtml':
+        method = 'xml'
     string = (
         # However, to be honest, if it is an HTML file, 
         # it does not need to have a <?xml ?> header
@@ -221,7 +244,7 @@ def ctx_edit_html(bc, manifest_id: str):
     except DoNotWriteBack:
         pass
     else:
-        method = 'xml' if 'xhtml' in bc.id_to_mime(manifest_id) else 'html'
+        method = 'xhtml' if 'xhtml' in bc.id_to_mime(manifest_id) else 'html'
         bc.writefile(
             manifest_id, 
             html_tostring(tree, method=method).decode('utf-8')

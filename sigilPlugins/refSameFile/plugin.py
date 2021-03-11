@@ -1,9 +1,10 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 7)
+__version__ = (0, 0, 8)
 
 from contextlib import ExitStack
 from html import unescape
 from os.path import basename
+from re import compile as re_compile
 from urllib.parse import urldefrag, unquote
 
 from utils.relationship import is_first_child, is_first_only_descendant
@@ -11,8 +12,21 @@ from utils.dialog import message_dialog
 from utils.sigil_edit_file import ctx_edit_html
 
 
+# TODO: 运行插件后，会弹出一个 GUI 的对话框，你可以配置一些选项，可以更好地指导程序完成你的目标
+# TODO: 把插件 reNumberNotes 的功能也整合进来，通过增加开始时的 GUI 界面选项实现
+# TODO: 对脚注的识别，提供 人工写选择器 和 自动判断（现在的方式） 的选项，勾选 人工写选择器 的复选框，
+#       GUI 界面会多出一个输入框，用于输入选择器
+
+
 def _clean_space(s):
     return unescape(s).strip().replace('&nbsp;', '')
+
+
+def _startswith_protocal(
+    s: str, 
+    _cre=re_compile('[_a-zA-Z0-9]+://')
+) -> bool:
+    return _cre.match(s) is not None
 
 
 def run(bc):
@@ -46,7 +60,14 @@ def run(bc):
                 # * 唯一孩子：如果一个元素 el 没有父元素，或者父元素只有它一个孩子元素，且它没有兄弟文字
                 #           节点或者兄弟文字节点中只有空白符号。唯一孩子必是首位孩子。
                 noteref_id = noteref.attrib['id']
-                # 假设：某个脚注的 id 和 href 可能分别位于不同的元素节点中，必须保证包含 id 的元素节点
+                # 观点：作为 脚注引用 的部分，里面有且只能有 1 个 href，不然的话，它会锚向多个地方，这是不合适的
+                # TODO：假设：在 脚注 和 脚注引用 中，必须保证
+                #           ① 文件存在：锚点链接 href 所在的文件和锚向的文件在同一文件夹中，
+                #                      而且锚向的文件也是存在的
+                #           ② id 存在：锚点链接 href 中所提供的 id 在对应文件中是存在的
+                #           ③ footnoot 至少单向引用：脚注引用 的 href 引用 脚注 的 id
+                #           ④ rearnote 相互引用：脚注引用 的 href 引用 脚注 的 id，脚注 的 href 引用 脚注引用 的 id
+                # 假设：某个 脚注引用 的 id 和 href 可能分别位于不同的元素节点中，必须保证包含 id 的元素节点
                 #      **不位于**包含 href 的元素节点之外或者之后，如果互为兄弟节点则这两者是紧邻的
                 #      （中间没有穿插其它元素节点）
                 # 技巧：在无命名空间时，descendant-or-self::*[@href] 相当于 css 选择器 a[href]
@@ -60,6 +81,9 @@ def run(bc):
                         'descendant-or-self::*[local-name(.) = "a" and @href]/@href')
                 if hrefs:
                     noteref_href = hrefs[0]
+                    # 一般来说，锚向 ePub 内某个 html/xhtml 中的链接，开头不会指定协议
+                    if _startswith_protocal(noteref_href):
+                        continue
                 else:
                     continue
 
@@ -70,8 +94,8 @@ def run(bc):
                 url, footnote_id = urldefrag(noteref_href)
 
                 if (
-                    url              # url 不为空，否则 footnoot 在同一个文件
-                    and footnote_id  # hashtag 不为空，否则点击并不会发生跳转
+                    url              # 链接 url 不为空，否则 footnoot 在同一个文件
+                    and footnote_id  # 脚注 id 不为空，否则点击并不会发生跳转
                 ):
                     path_footnote = unquote(basename(url))
 
