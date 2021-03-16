@@ -1,20 +1,20 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 4)
+__version__ = (0, 0, 5)
 
 from platform import system
 from contextlib import contextmanager
 from typing import (
     Any, Callable, Dict, Generator, Iterable, 
-    Optional, Tuple, Union, 
+    List, Optional, Tuple, Union, 
 )
 
 from lxml.etree import _Element, _ElementTree # type: ignore
-from lxml.html import fromstring, tostring, Element, HTMLParser # type: ignore
+from lxml.html import fromstring, tostring, Element, HtmlElement, HTMLParser # type: ignore
 
 
-__all__ = ['DoNotWriteBack', 'html_fromstring', 'html_tostring', 'edit_file',
-           'ctx_gen_edit', 'ctx_edit', 'ctx_edit_html', 'gen_edit', 'iter_edit', 
-           'batch_edit', 'gen_edit_html', 'batch_edit_html']
+__all__ = ['DoNotWriteBack', 'make_html_element', 'html_fromstring', 'html_tostring', 
+           'edit_file','ctx_gen_edit', 'ctx_edit', 'ctx_edit_html', 'gen_edit', 
+           'iter_edit', 'batch_edit', 'gen_edit_html', 'batch_edit_html']
 
 _PLATFORM_IS_WINDOWS = system() == 'Windows'
 _HTML_DOCTYPE = b'<!DOCTYPE html>'
@@ -36,6 +36,23 @@ def _ensure_bytes(o: Any) -> bytes:
         return bytes(o, encoding='utf-8')
     else:
         return bytes(o)
+
+
+def make_html_element(
+    tag: str, 
+    text: Optional[str] = None, 
+    children: Optional[List[HtmlElement]] = None,
+    tail: Optional[str] = None, 
+) -> HtmlElement:
+    'Make a HtmlElement object'
+    el = Element(tag)
+    if text is not None:
+        el.text = text
+    if children is not None:
+        el.extend(children)
+    if tail is not None:
+        el.tail = text
+    return el
 
 
 def html_fromstring(
@@ -66,15 +83,9 @@ def html_fromstring(
     # get root element
     for tree in tree.iterancestors(): pass
     if tree.find('head') is None:
-        el = Element('head')
-        el.text = ' '
-        el.tail = '\n'
-        tree.insert(0, el)
+        tree.insert(0, make_html_element('head', ' ', tail='\n'))
     if tree.find('body') is None:
-        el = Element('body')
-        el.text = ' '
-        el.tail = '\n'
-        tree.append(el)
+        tree.append(make_html_element('body', ' ', tail='\n'))
     return tree
 
 

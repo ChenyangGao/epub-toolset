@@ -5,6 +5,7 @@ __version__ = (0, 3, 7)
 
 from os import path
 from re import compile as re_compile, escape as re_escape
+from shutil import copyfile
 from typing import Callable, Collection, Optional, Tuple, Union
 from urllib.parse import unquote
 from xml.etree.ElementTree import fromstring
@@ -122,8 +123,9 @@ def rename_in_epub(
     '对 ePub 内在 OPF 文件所在文件夹或子文件夹下的文件修改文件名'
     epub_path2 = add_stem_suffix(epub_path, stem_suffix)
     has_encrypt_file: bool = False
+    is_empty_scan_dirs = scan_dirs == []
 
-    def nomalize_dirname(dir_: str, _cre=re_compile(r'\.+/')) -> str:
+    def normalize_dirname(dir_: str, _cre=re_compile(r'^\.+/')) -> str:
         if dir_.startswith('.'):
             dir_ = _cre.sub('', dir_, 1)
         if not dir_.endswith('/'):
@@ -134,7 +136,7 @@ def rename_in_epub(
         if '.' in scan_dirs or '' in scan_dirs:
             scan_dirs = None
         else:
-            scan_dirs = tuple(map(nomalize_dirname, scan_dirs))
+            scan_dirs = tuple(map(normalize_dirname, scan_dirs))
 
     with ZipFile(epub_path, mode='r') as epubzf, \
             ZipFile(epub_path2, mode='w') as epubzf2:
@@ -169,6 +171,12 @@ def rename_in_epub(
             if key not in itemmap and key != opf_name:
                 print('⚠️ 跳过文件', zi_filename, 
                       '，因为它未在 %s 内被列出' % opf_path)
+                continue
+
+            if is_empty_scan_dirs:
+                content = epubzf.read(zipinfo)
+                zipinfo.file_size = len(content)
+                epubzf2.writestr(zipinfo, content)
                 continue
 
             # 针对 OPF 文件专门处理，避免当 id 和 href 相等时，id 也被替换
@@ -239,7 +247,15 @@ if __name__ == '__main__':
                     help='待处理的 ePub 文件（有多个用空格隔开）')
     ap.add_argument('-s', '--scan-dirs', dest="scan_dirs", nargs='*', 
                     help='在 OPF 文件所在文件夹内，会对传入的这组路径内的文件夹及其子文件夹内的文件会被重命名，'
-                         '如果不指定此参数（相当于传入 \'.\' 或 \'\'）则扫描 OPF 文件所在文件夹下所有文件夹')
+                         '如果不指定此参数（相当于传入 \'.\' 或 \'\'）则扫描 OPF 文件所在文件夹下所有文件夹，'
+                         '但如果只指定，却不传任何参数，则不会对文件进行改名（这适用于只想添加或移除加密文件）。'
+                         # TODO: 增加扩展语法，提供模式匹配
+                         #'\n我更提供了一下扩展语法：\n'
+                         #'    1) pattern      搜索和 pattern 相等的目录路径\n'
+                         #'    2) str:pattern  等同于 1)，搜索和 pattern 相等的目录路径\n'
+                         #'    3) glob:pattern 把 pattern 视为 glob 模式，搜索和 pattern 相等的目录路径\n'
+                         #'    4) re:pattern   把 pattern 视为 正则表达式 模式，搜索和 pattern 相等的目录路径\n'
+                    )
     ap.add_argument('-r', '--recursive', action='store_true', 
                     help='如果不指定，遇到文件夹时，只扫描这个文件夹内所有.epub 结尾的文件。'
                          '如果指定，遇到文件夹时，会遍历这个文件夹及其所有子文件夹（如果有的话）'
