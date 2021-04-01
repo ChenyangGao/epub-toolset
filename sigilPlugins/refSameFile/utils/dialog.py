@@ -5,10 +5,14 @@ __version__ = (0, 0, 1)
 __all__ = ['message_dialog']
 
 
-try:
-    from PyQt5.QtWidgets import QApplication, QMessageBox # type: ignore
+from typing import cast, Any
 
-    app = QApplication([])
+
+app: Any
+try:
+    from PyQt5.QtWidgets import QApplication, QMessageBox
+
+    app = cast(QApplication, QApplication([]))
 
     def message_dialog(title: str= 'Message', message: str = 'Yes or No') -> bool:
         reply = QMessageBox.question(None, title, message, QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
@@ -16,7 +20,7 @@ try:
 except ImportError:
     from tkinter import Tk, messagebox 
 
-    app = Tk()
+    app = cast(Tk, Tk())
     app.withdraw()
 
     def message_dialog(title: str= 'Message', message: str = 'Yes or No') -> bool:

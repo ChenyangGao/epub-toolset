@@ -1,13 +1,15 @@
 #! /usr/bin/env python3
 # coding: utf-8
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 3, 7)
+__version__ = (0, 3, 8)
 
 from os import path
 from re import compile as re_compile, escape as re_escape
 from shutil import copyfile
-from typing import Callable, Collection, Optional, Tuple, Union
-from urllib.parse import unquote
+from typing import (
+    Callable, Collection, Dict, List, Optional, Tuple, Union
+)
+from urllib.parse import quote, unquote
 from xml.etree.ElementTree import fromstring
 from zipfile import ZipFile, ZipInfo
 
@@ -66,11 +68,13 @@ def get_opf_itemmap(
 def make_key_newname_map(
     itemmap: dict, 
     generate: Callable[..., str],
-    scan_dirs: Optional[Tuple[str]],
+    scan_dirs: Optional[Tuple[str, ...]],
+    quote_or_not: bool = False,
     _cre=re_compile(r'(?P<suffix>~[a-zA-Z]+)\.[a-zA-z]+$'),
-) -> dict:
-    key_newname_map: dict = {}
-    stem_map: dict = {}
+) -> Tuple[dict, list]:
+    key_newname_map: Dict[str, str] = {}
+    key_newname_repl: List[Tuple[str, Union[str, Callable]]] = []
+    stem_map: Dict[str, str] = {}
     noarg = argcount(generate) == 0
 
     def register(key, stem):
@@ -79,7 +83,15 @@ def make_key_newname_map(
         newname: str = path.basename(newfullname)
         repfunc: Callable = re_compile('\b%s\b' % re_escape(orgname)).sub
         key_newname_map[key] = newfullname
-        key_newname_map['\b'+orgname] = lambda s, *, _r=repfunc, _rp=newname: _r(_rp, s)
+        # 据说在多看阅读中，混淆过的文件名可能不能被识别，比如在 css 中 import 另一 css，
+        # 所以可能需要对链接进行 quote 编码
+        if quote_or_not:
+            newfullname = quote(newfullname)
+        key_newname_repl.append((key, newfullname))
+        key_newname_repl.append((
+            '\b'+orgname, 
+            lambda s, *, _r=repfunc, _rp=newname: _r(_rp, s)
+        ))
 
     stem: str
     for key, attrib in itemmap.items():
@@ -108,13 +120,14 @@ def make_key_newname_map(
             stem = stem_map[key] = generate() if noarg else generate(attrib)
         register(key, stem)
 
-    return key_newname_map
+    return key_newname_map, key_newname_repl
 
 
 def rename_in_epub(
     epub_path: str, 
     generate_new_name: Callable[..., str] = lambda attrib: attrib['id'],
     stem_suffix: str = '-repack',
+    quote_or_not: bool = False,
     remove_encrypt_file: bool = False,
     add_encrypt_file: bool = False,
     scan_dirs: Optional[Collection[str]] = None,
@@ -145,10 +158,11 @@ def rename_in_epub(
         opf_root += '/'
 
         itemmap = get_opf_itemmap(epubzf, opf_path)
-        key_newname_map = make_key_newname_map(
+        key_newname_map, key_newname_repl = make_key_newname_map(
             itemmap=itemmap, 
             generate=generate_new_name,
             scan_dirs=scan_dirs,
+            quote_or_not=quote_or_not,
         )
 
         for zipinfo in epubzf.filelist:
@@ -184,17 +198,16 @@ def rename_in_epub(
                 content = epubzf.read(zipinfo)
                 text = unquote(content.decode())
                 for key, name in key_newname_map.items():
-                    if not callable(name):
-                        text = text.replace('href="' + key, 'href="' + name)
-                        text = text.replace('idref="' + key, 'idref="' + name)
+                    text = text.replace('href="' + key, 'href="' + name)
+                    text = text.replace('idref="' + key, 'idref="' + name)
                 content = text.encode()
                 zipinfo.file_size = len(content)
                 epubzf2.writestr(zipinfo, content)
                 continue
 
             content = epubzf.read(zipinfo)
-            newname = key_newname_map.get(key, key)
-            zipinfo.filename = opf_root + newname
+            if key in key_newname_map:
+                zipinfo.filename = opf_root + key_newname_map[key]
 
             if ignore_dirs and key.startswith(ignore_dirs):
                 epubzf2.writestr(zipinfo, content)
@@ -205,7 +218,7 @@ def rename_in_epub(
             except UnicodeDecodeError:
                 epubzf2.writestr(zipinfo, content)
             else:
-                for key2, replace in key_newname_map.items():
+                for key2, replace in key_newname_repl:
                     if callable(replace):
                         text = replace(text)
                     elif type(key2) is str:
@@ -271,6 +284,8 @@ if __name__ == '__main__':
                     help='用于编码的字符集（不可重复，字符集大小应该是2、4、16、256之一），'
                          '如果你没有指定 -n 或 --encode_filenames，此参数被略，默认值是 '
                          + BASE4CHARS)
+    ap.add_argument('-q', '--quote-or-not', dest='quote_or_not', action='store_true', 
+                    help='是否对改动的文件名进行百分号 %% 转义')
     ap.add_argument('-x', '--suffix', default='-repack', 
                     help='已处理的 ePub 文件名为在原来的 ePub 文件名的扩展名前面添加后缀，默认值是 -repack')
     args = ap.parse_args()
@@ -290,6 +305,7 @@ if __name__ == '__main__':
             epub, 
             scan_dirs=args.scan_dirs,
             stem_suffix=args.suffix, 
+            quote_or_not=args.quote_or_not,
             generate_new_name=method,
             remove_encrypt_file=args.remove_encrypt_file,
             add_encrypt_file=args.add_encrypt_file,

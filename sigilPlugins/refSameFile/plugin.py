@@ -1,5 +1,5 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 8)
+__version__ = (0, 0, 9)
 
 from contextlib import ExitStack
 from html import unescape
@@ -65,7 +65,7 @@ def run(bc):
                 #           ① 文件存在：锚点链接 href 所在的文件和锚向的文件在同一文件夹中，
                 #                      而且锚向的文件也是存在的
                 #           ② id 存在：锚点链接 href 中所提供的 id 在对应文件中是存在的
-                #           ③ footnoot 至少单向引用：脚注引用 的 href 引用 脚注 的 id
+                #           ③ footnote 至少单向引用：脚注引用 的 href 引用 脚注 的 id
                 #           ④ rearnote 相互引用：脚注引用 的 href 引用 脚注 的 id，脚注 的 href 引用 脚注引用 的 id
                 # 假设：某个 脚注引用 的 id 和 href 可能分别位于不同的元素节点中，必须保证包含 id 的元素节点
                 #      **不位于**包含 href 的元素节点之外或者之后，如果互为兄弟节点则这两者是紧邻的
@@ -93,72 +93,73 @@ def run(bc):
 
                 url, footnote_id = urldefrag(noteref_href)
 
-                if (
-                    url              # 链接 url 不为空，否则 footnoot 在同一个文件
-                    and footnote_id  # 脚注 id 不为空，否则点击并不会发生跳转
-                ):
+                if not footnote_id:  # 脚注 id 必须不为空，否则点击并不会发生跳转
+                    continue
+
+                if url:
                     path_footnote = unquote(basename(url))
+                else: # 若 url 为空，说明 noteref 和 footnote 在同一个文件
+                    path_footnote = path_noteref
 
-                    if not is_move_all:
-                        # 如果 noteref 和 footnote 在同一个文件，则跳过
-                        if path_noteref == path_footnote: 
-                            continue
+                # 若 is_move_all 为假，则当 noteref 和 footnote 在同一个文件不需要移动
+                if not is_move_all and path_noteref == path_footnote: 
+                    continue
 
-                    try:
-                        item_footnote = path_item_map[path_footnote]
-                    except KeyError: # 引用了一个不存在的文件
-                        print('WARN::', 'invalid href:', noteref_href, 
-                              'at file:', path_noteref)
-                        continue
-                    else:
-                        etree_footnote = item_footnote['data']
-                    # 假设: 被引用注释是任意元素 x，它内部有一个<a>元素，它也引用了引用它的元素，
-                    #   并且 x 是它父元素的首位孩子，则它的父元素可以作为 footnote 整体（递归）
-                    # 需要被引用注释存在，如果不存在，则跳过
-                    footnote = etree_footnote.find('.//*[@id="%s"]' % footnote_id)
-                    if footnote is None:
-                        continue
-                    # 必须：footnote 也引用 noteref，否则跳过
+                try:
+                    item_footnote = path_item_map[path_footnote]
+                except KeyError: # 引用了一个不存在的文件
+                    print('WARN::', 'invalid href:', noteref_href, 
+                            'at file:', path_noteref)
+                    continue
+                else:
+                    etree_footnote = item_footnote['data']
+                # 假设: 被引用注释是任意元素 x，它内部有一个<a>元素，它也引用了引用它的元素，
+                #   并且 x 是它父元素的首位孩子，则它的父元素可以作为 footnote 整体（递归）
+                # 需要被引用注释存在，如果不存在，则跳过
+                footnote = etree_footnote.find('.//*[@id="%s"]' % footnote_id)
+                if footnote is None:
+                    continue
+                # 必须：footnote 也引用 noteref，否则跳过
+                for href in footnote.xpath(
+                    'descendant-or-self::*[local-name(.) = "a" and @href]/@href'
+                ):
+                    if noteref_id == urldefrag(href)[1]:
+                        break
+                else:
                     for href in footnote.xpath(
-                        'descendant-or-self::*[local-name(.) = "a" and @href]/@href'
+                        '../descendant-or-self::*[local-name(.) = "a" and @href]/@href'
                     ):
                         if noteref_id == urldefrag(href)[1]:
+                            footnote = footnote.getparent()
                             break
                     else:
-                        for href in footnote.xpath(
-                            '../descendant-or-self::*[local-name(.) = "a" and @href]/@href'
-                        ):
-                            if noteref_id == urldefrag(href)[1]:
-                                footnote = footnote.getparent()
-                                break
-                        else:
-                            continue
-                    # 假设: footnote 是它父元素的首位孩子。如果它有兄弟文本节点包含除空白字符以外的其它字符
-                    #      ，或者它有兄弟元素节点拥有与它不同的标签名，则它的父元素可以作为被引用的整体（递归）
-                    while is_first_child(footnote):
-                        p_footnote = footnote.getparent()
-                        if p_footnote is None:
-                            break
-                        # 无论怎么说，它的父元素不应该是如下的特殊元素节点
-                        if p_footnote.tag in ('body', 'head', 'html'):
-                            break
+                        continue
+                # 假设: footnote 是它父元素的首位孩子。如果它有兄弟文本节点包含除空白字符以外的其它字符
+                #      ，或者它有兄弟元素节点拥有与它不同的标签名，则它的父元素可以作为被引用的整体（递归）
+                while is_first_child(footnote):
+                    p_footnote = footnote.getparent()
+                    if p_footnote is None:
+                        break
+                    # 无论怎么说，它的父元素不应该是如下的特殊元素节点
+                    if p_footnote.tag in ('body', 'head', 'html'):
+                        break
 
-                        following_text_nodes = footnote.xpath('following-sibling::text()')
-                        if any(map(_clean_space, following_text_nodes)):
-                            footnote = p_footnote
-                            continue 
-                        if (
-                            len(p_footnote) == 1 or 
-                            footnote.xpath('following-sibling::*[local-name(.) != "%s"]' %footnote.tag)
-                        ):
-                            footnote = p_footnote
+                    following_text_nodes = footnote.xpath('following-sibling::text()')
+                    if any(map(_clean_space, following_text_nodes)):
+                        footnote = p_footnote
+                        continue 
+                    if (
+                        len(p_footnote) == 1 or 
+                        footnote.xpath('following-sibling::*[local-name(.) != "%s"]' %footnote.tag)
+                    ):
+                        footnote = p_footnote
 
-                    # 或者更具体的：
-                    # url = bc.id_to_href(item_footnote['id])
-                    # noteref.attrib['href'] = url + '#' + footnote_id
-                    noteref.attrib['href'] = '#' + footnote_id
+                # 或者更具体的：
+                # url = bc.id_to_href(item_footnote['id])
+                # noteref.attrib['href'] = url + '#' + footnote_id
+                noteref.attrib['href'] = '#' + footnote_id
 
-                    pending_to_move.append(footnote)
+                pending_to_move.append(footnote)
 
             body.extend(pending_to_move)
 

@@ -36,4 +36,8 @@ __pycache__/
 # Log file
 *.log
 
+# Zipped file
+*.zip
+*.7z
+*.rar
 
