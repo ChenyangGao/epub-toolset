@@ -40,26 +40,37 @@ def get_item_href_stem(attrib: Mapping) -> str:
 
 @register
 def get_enum_id(*, _c=count(1)) -> int:
-    '第一次调用，得到 1，以后每一次调用，得到的是前 1 次的值 + 1'
+    '提供全局递增计数，第一次调用，得到 1，以后每一次调用，得到的是前 1 次的值 + 1'
     return next(_c)
 
-
 @register
-def get_id(attrib: Any) -> int:
-    '返回对象的 id 值，在 CPython 中就是对象的内存地址'
-    return id(attrib)
-
-
-@register
-def get_uuid() -> bytes:
-    '获取一个随机的 uuid (使用 uuid.uuid4() 生成)'
-    return uuid4().bytes
+def get_sep_enum_id(attrib: Mapping, *, _c={}) -> int:
+    '为每个文件夹中的文件，分别提供递增计数，从 1 开始递增'
+    d = path.dirname(attrib['href'])
+    if d in _c:
+        _c[d] += 1
+        return _c[d]
+    else:
+        _c[d] = 1
+        return 1
 
 
 @register
 def get_item_id(attrib: Mapping) -> str:
     '文件名为 OPF 文件内对应 item 元素的 id 属性'
     return attrib['id']
+
+
+@register
+def get_id(attrib: Any) -> int:
+    '在 CPython 中，返回传入的对象的内存地址（你不需要知道传入什么对象，只需要知道这个 id 是唯一的）'
+    return id(attrib)
+
+
+@register
+def get_uuid() -> bytes:
+    '获取一个随机的 uuid (使用 uuid.uuid4() 生成，长度为 16 字节)'
+    return uuid4().bytes
 
 
 @register

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # coding: utf-8
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 3, 8)
+__version__ = (0, 3, 9)
 
 from os import path
 from re import compile as re_compile, escape as re_escape
@@ -21,6 +21,7 @@ PROJECT_FOLDER = path.dirname(__file__)
 SRC_FOLDER = path.join(PROJECT_FOLDER, 'src')
 
 
+# TODO: 下面的方法其实是不够精确的，以后会根据 mime-type 进行判断是不是文本文件
 # 忽略的文件夹，这些文件夹内的所有文件不进行文本替换
 DIR_IGNORED: Tuple[str, ...] = ('Fonts/', 'fonts/', 'Images/', 'images/', 
                                 'Audio/', 'audio/', 'Video/', 'video/')
@@ -69,9 +70,12 @@ def make_key_newname_map(
     itemmap: dict, 
     generate: Callable[..., str],
     scan_dirs: Optional[Tuple[str, ...]],
-    quote_or_not: bool = False,
+    quote_names: bool = False,
+    mode: str = 'optimistic',
     _cre=re_compile(r'(?P<suffix>~[a-zA-Z]+)\.[a-zA-z]+$'),
 ) -> Tuple[dict, list]:
+    mode_idx: int = ('optimistic', 'pessimistic').index(mode)
+
     key_newname_map: Dict[str, str] = {}
     key_newname_repl: List[Tuple[str, Union[str, Callable]]] = []
     stem_map: Dict[str, str] = {}
@@ -81,17 +85,19 @@ def make_key_newname_map(
         newfullname: str = replace_stem(key, stem, '/')
         orgname: str = path.basename(key)
         newname: str = path.basename(newfullname)
-        repfunc: Callable = re_compile('\b%s\b' % re_escape(orgname)).sub
         key_newname_map[key] = newfullname
         # 据说在多看阅读中，混淆过的文件名可能不能被识别，比如在 css 中 import 另一 css，
         # 所以可能需要对链接进行 quote 编码
-        if quote_or_not:
+        if quote_names:
             newfullname = quote(newfullname)
-        key_newname_repl.append((key, newfullname))
-        key_newname_repl.append((
-            '\b'+orgname, 
-            lambda s, *, _r=repfunc, _rp=newname: _r(_rp, s)
-        ))
+        if mode_idx == 0:
+            key_newname_repl.append((key, newfullname))
+        elif mode_idx == 1:
+            repfunc: Callable = re_compile(r'\b%s\b' % re_escape(orgname)).sub
+            key_newname_repl.append((
+                '\b'+orgname, 
+                lambda s, *, _r=repfunc, _rp=newname: _r(_rp, s)
+            ))
 
     stem: str
     for key, attrib in itemmap.items():
@@ -127,7 +133,8 @@ def rename_in_epub(
     epub_path: str, 
     generate_new_name: Callable[..., str] = lambda attrib: attrib['id'],
     stem_suffix: str = '-repack',
-    quote_or_not: bool = False,
+    quote_names: bool = False,
+    mode: str = 'optimistic',
     remove_encrypt_file: bool = False,
     add_encrypt_file: bool = False,
     scan_dirs: Optional[Collection[str]] = None,
@@ -162,7 +169,8 @@ def rename_in_epub(
             itemmap=itemmap, 
             generate=generate_new_name,
             scan_dirs=scan_dirs,
-            quote_or_not=quote_or_not,
+            quote_names=quote_names,
+            mode=mode,
         )
 
         for zipinfo in epubzf.filelist:
@@ -251,23 +259,24 @@ if __name__ == '__main__':
         description='对 ePub 内在 OPF 文件所在文件夹或子文件夹下的文件修改文件名',
         formatter_class=RawTextHelpFormatter,
     )
-    ap.add_argument('-rm', '--remove_encrypt_file', action='store_true', 
+    ap.add_argument('-rm', '--remove-encrypt-file', dest='remove_encrypt_file', action='store_true', 
                     help='移除加密文件 META-INF/encryption.xml')
-    ap.add_argument('-ad', '--add_encrypt_file', action='store_true', 
+    ap.add_argument('-ad', '--add-encrypt-file', dest='add_encrypt_file', action='store_true', 
                     help='添加加密文件 META-INF/encryption.xml。如果已有加密文件，但未指定'
-                         '--remove_encrypt_file，则忽略。')
+                         '-rm 或 --remove-encrypt-file，则忽略。')
     ap.add_argument('-l', '--epub-list', dest="list", nargs='+', 
                     help='待处理的 ePub 文件（有多个用空格隔开）')
+    # TODO: 以后还会加入对 OPS 文件内 item 元素的 id 值进行正则表达式筛选
     ap.add_argument('-s', '--scan-dirs', dest="scan_dirs", nargs='*', 
                     help='在 OPF 文件所在文件夹内，会对传入的这组路径内的文件夹及其子文件夹内的文件会被重命名，'
                          '如果不指定此参数（相当于传入 \'.\' 或 \'\'）则扫描 OPF 文件所在文件夹下所有文件夹，'
                          '但如果只指定，却不传任何参数，则不会对文件进行改名（这适用于只想添加或移除加密文件）。'
                          # TODO: 增加扩展语法，提供模式匹配
                          #'\n我更提供了一下扩展语法：\n'
-                         #'    1) pattern      搜索和 pattern 相等的目录路径\n'
-                         #'    2) str:pattern  等同于 1)，搜索和 pattern 相等的目录路径\n'
-                         #'    3) glob:pattern 把 pattern 视为 glob 模式，搜索和 pattern 相等的目录路径\n'
-                         #'    4) re:pattern   把 pattern 视为 正则表达式 模式，搜索和 pattern 相等的目录路径\n'
+                         #'    1) pattern      搜索和 pattern 相等的文件夹路径\n'
+                         #'    2) str:pattern  等同于 1)，搜索和 pattern 相等的文件夹路径\n'
+                         #'    3) glob:pattern 把 pattern 视为 glob 模式，搜索和 pattern 相等的文件夹路径\n'
+                         #'    4) re:pattern   把 pattern 视为 正则表达式 模式，搜索和 pattern 相等的文件夹路径\n'
                     )
     ap.add_argument('-r', '--recursive', action='store_true', 
                     help='如果不指定，遇到文件夹时，只扫描这个文件夹内所有.epub 结尾的文件。'
@@ -275,7 +284,7 @@ if __name__ == '__main__':
                          '下所有 .epub 结尾的文件。')
     ap.add_argument('-g', '--glob', action='store_true', 
                     help='如果指定，则把 -l 参数传入的路径当成 glob 查询模式，如果再指定-r，'
-                         '** 会匹配任何文件和任意多个目录或子目录')
+                         '** 会匹配任何文件和任意多个文件夹或子文件夹')
     ap.add_argument('-m', '--method', default='0', 
                     help='产生文件名的策略 （输入数字或名字，默认值 0）\n' + doc)
     ap.add_argument('-n', '--encode-filenames', dest='encode_filenames', action='store_true', 
@@ -284,8 +293,20 @@ if __name__ == '__main__':
                     help='用于编码的字符集（不可重复，字符集大小应该是2、4、16、256之一），'
                          '如果你没有指定 -n 或 --encode_filenames，此参数被略，默认值是 '
                          + BASE4CHARS)
-    ap.add_argument('-q', '--quote-or-not', dest='quote_or_not', action='store_true', 
-                    help='是否对改动的文件名进行百分号 %% 转义')
+    ap.add_argument('-q', '--quote-names', dest='quote_names', action='store_true', 
+                    help='对改动的文件名进行百分号 %% 转义')
+    ap.add_argument('-md', '--mode', choices=('1', 'o', 'optimistic', '2', 'p', 'pessimistic'), 
+                    default='1', type={
+                        '1': 'optimistic',
+                        'o': 'optimistic',
+                        'optimistic': 'optimistic',
+                        '2': 'pessimistic',
+                        'p': 'optimistic',
+                        'pessimistic': 'pessimistic',
+                    }.__getitem__, help='改名模式：\n'
+                        '    1 | o | optimistic:  乐观模式（默认）。所有文件的引用路径都相对于 OPF 文件所在的文件夹\n'
+                        '    2 | p | pessimistic: 悲观模式。有些文件的引用路径不相对于 OPF 文件所在的文件夹，比如引用同一文件夹内的文件只需要直接写文件名\n'
+                    )
     ap.add_argument('-x', '--suffix', default='-repack', 
                     help='已处理的 ePub 文件名为在原来的 ePub 文件名的扩展名前面添加后缀，默认值是 -repack')
     args = ap.parse_args()
@@ -305,7 +326,8 @@ if __name__ == '__main__':
             epub, 
             scan_dirs=args.scan_dirs,
             stem_suffix=args.suffix, 
-            quote_or_not=args.quote_or_not,
+            quote_names=args.quote_names,
+            mode=args.mode,
             generate_new_name=method,
             remove_encrypt_file=args.remove_encrypt_file,
             add_encrypt_file=args.add_encrypt_file,
@@ -328,7 +350,7 @@ if __name__ == '__main__':
 
         for epub in args.list:
             if not path.exists(epub):
-                print('!!! 跳过不存在的文件或文件夹：', epub)
+                print('🚨 跳过不存在的文件或文件夹：', epub)
             elif path.isdir(epub):
                 for fpath in iter_scan_files(epub, recursive=args.recursive):
                     if fpath.endswith('.epub'):
