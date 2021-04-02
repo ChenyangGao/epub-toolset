@@ -301,7 +301,7 @@ if __name__ == '__main__':
                         'o': 'optimistic',
                         'optimistic': 'optimistic',
                         '2': 'pessimistic',
-                        'p': 'optimistic',
+                        'p': 'pessimistic',
                         'pessimistic': 'pessimistic',
                     }.__getitem__, help='改名模式：\n'
                         '    1 | o | optimistic:  乐观模式（默认）。所有文件的引用路径都相对于 OPF 文件所在的文件夹\n'
