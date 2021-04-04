@@ -1,5 +1,10 @@
+'''
+This module provides some functions for modifying files in the 
+[Sigil Ebook Editor](https://sigil-ebook.com/) plug-ins.
+'''
+
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 7)
+__version__ = (0, 0, 8)
 
 from collections import namedtuple
 from contextlib import contextmanager
@@ -15,19 +20,19 @@ from typing import (
 from cssselect.xpath import GenericTranslator # type: ignore
 from lxml.cssselect import CSSSelector # type: ignore
 from lxml.etree import ( # type: ignore
-    fromstring as _html_fromstring, tostring as _html_tostring, 
-    _Element, _ElementTree, XPath, 
+    fromstring as xml_fromstring, tostring as _xml_tostring, 
+    _Element, _ElementTree, Element, XPath, 
 ) 
 from lxml.html import ( # type: ignore
-    fromstring as xml_fromstring, tostring as xml_tostring, 
-    Element, HtmlElement, HTMLParser, 
+    fromstring as _html_fromstring, tostring as _html_tostring, 
+    Element as HTMLElement, HtmlElement, HTMLParser, 
 )
 
 
 __all__ = [
-    'WriteBack', 'DoNotWriteBack', 'xml_fromstring', 'xml_tostring', 
-    'make_html_element', 'html_fromstring', 'html_tostring', 'edit', 
-    'ctx_edit', 'ctx_edit_sgml', 'ctx_edit_html', 'edit_iter', 
+    'WriteBack', 'DoNotWriteBack', 'make_element','make_html_element', 
+    'xml_fromstring', 'xml_tostring', 'html_fromstring', 'html_tostring', 
+    'edit', 'ctx_edit', 'ctx_edit_sgml', 'ctx_edit_html', 'edit_iter', 
     'edit_batch', 'edit_html_iter', 'edit_html_batch', 
     'IterElementInfo', 'EnumSelectorType', 'element_iter', 
 ]
@@ -102,14 +107,22 @@ def _make_standard_predicate(
     return pred
 
 
-def make_html_element(
+def make_element(
     tag: str, 
-    text: Optional[str] = '', 
-    children: Optional[List[HtmlElement]] = None,
+    text: Optional[str] = None, 
+    attrib: Optional[Mapping] = None,
+    nsmap: Optional[Mapping] = None,
+    children: Optional[List[_Element]] = None,
     tail: Optional[str] = None, 
-) -> HtmlElement:
-    'Make a HtmlElement object'
-    el = Element(tag)
+    **_extra,
+) -> _Element:
+    '''Make a lxml.etree._Element object
+
+    Tips: Please read the following documentation(s) for details
+        - lxml.etree.Element
+        - lxml.html._Element
+    '''
+    el = Element(tag, attrib=attrib, nsmap=nsmap, **_extra)
     if text is not None:
         el.text = text
     if children is not None:
@@ -119,15 +132,84 @@ def make_html_element(
     return el
 
 
+def make_html_element(
+    tag: str, 
+    text: Optional[str] = '', 
+    attrib: Optional[Mapping] = None,
+    nsmap: Optional[Mapping] = None,
+    children: Optional[List[HtmlElement]] = None,
+    tail: Optional[str] = None, 
+    **_extra,
+) -> HtmlElement:
+    '''Make a lxml.html.HtmlElement object
+
+    Tips: Please read the following documentation(s) for details
+        - lxml.etree.Element
+        - lxml.html.HtmlElement
+    '''
+    el = HTMLElement(tag, attrib=attrib, nsmap=nsmap, **_extra)
+    if text is not None:
+        el.text = text
+    if children is not None:
+        el.extend(children)
+    if tail is not None:
+        el.tail = text
+    return el
+
+
+def xml_tostring(
+    el: Union[_Element, _ElementTree], 
+    method: str = 'xml', 
+    **kwds,
+) -> bytes:
+    '''Convert a root element node to string by using 
+    `lxml.etree.tostring` function
+
+    Tips: Please read the following documentation(s) for details
+        - lxml.etree.tostring
+
+    :param method: The argument 'method' selects the output method: 'xml',
+        'html', plain 'text' (text content without tags), 'c14n' or 'c14n2'.
+        Default is 'xml'.
+        With ``method="c14n"`` (C14N version 1), the options ``exclusive``,
+        ``with_comments`` and ``inclusive_ns_prefixes`` request exclusive
+        C14N, include comments, and list the inclusive prefixes respectively.
+        With ``method="c14n2"`` (C14N version 2), the ``with_comments`` and
+        ``strip_text`` options control the output of comments and text space
+        according to C14N 2.0.
+    :param kwds: Keyword arguments `kwds` will be passed to 
+        `lxml.etree.tostring` function
+
+    :return: An XML string representation of the document
+    '''
+    if method not in ('xml', 'html'):
+        return _xml_tostring(el, method=method, **kwds)
+
+    roottree: _ElementTree = el.getroottree() if isinstance(el, _Element) else el
+    docinfo = roottree.docinfo
+    encoding = kwds.setdefault('encoding', docinfo.encoding or 'UTF-8')
+
+    string = _xml_tostring(roottree, method=method, **kwds)
+    if method == 'xml':
+        string = b'<?xml version="%s" encoding="%s"?>\n'% (
+            _ensure_bytes(docinfo.xml_version or b'1.0'),
+            _ensure_bytes(encoding),
+        ) + string
+
+    if _PLATFORM_IS_WINDOWS:
+        string = string.replace(b'&#13;', b'')
+    return string
+
+
 def html_fromstring(
     string: Union[str, bytes], 
     parser = _HTML_PARSER,
     **kwds
 ) -> _Element:
-    '''Convert a string to `lxml.etree._Element` object 
-    by using `lxml.html.fromstring` function
+    '''Convert a string to `lxml.etree._Element` object by using 
+    `lxml.html.fromstring` function
 
-    Tips: Please refer the following documentation(s) for details
+    Tips: Please read the following documentation(s) for details
         - lxml.html.fromstring
         - lxml.etree.fromstring
         - lxml.html.HTMLParser
@@ -155,12 +237,14 @@ def html_fromstring(
 
 
 def html_tostring(
-    el: Union[_Element, _ElementTree], method='html', **kwds
+    el: Union[_Element, _ElementTree], 
+    method: str = 'html', 
+    **kwds,
 ) -> bytes:
     '''Convert a root element node to string 
     by using `lxml.html.tostring` function
 
-    Tips: Please refer the following documentation(s) for details
+    Tips: Please read the following documentation(s) for details
         - lxml.html.tostring
         - lxml.etree.tostring
 
@@ -172,12 +256,14 @@ def html_tostring(
 
     :return: An HTML string representation of the document
     '''
+    if method not in ('xml', 'html', 'xhtml'):
+        return _html_tostring(el, method=method, **kwds)
+
     roottree: _ElementTree = el.getroottree() if isinstance(el, _Element) else el
     root: _Element = roottree.getroot()
     docinfo  = roottree.docinfo
-    encoding = kwds.get('encoding', docinfo.encoding)
-    kwds.setdefault('encoding', encoding)
     doctype = kwds.pop('doctype', docinfo.doctype)
+    encoding = kwds.setdefault('encoding', docinfo.encoding or 'UTF-8')
 
     if not doctype:
         if method == 'html':
@@ -206,7 +292,7 @@ def html_tostring(
 def edit(
     bc,
     manifest_id: str,
-    operate: Callable,
+    operate: Callable[..., Union[bytes, str]],
 ) -> bool:
     '''Read the file data, operate on, and then write the changed data back
 
@@ -220,12 +306,19 @@ def edit(
 
     :return: Is it successful?
     '''
+    content = bc.readfile(manifest_id)
+
     try:
-        bc.writefile(manifest_id, operate(bc.readfile(manifest_id)))
-    except:
+        content_new = operate(content)
+    except DoNotWriteBack:
         return False
-    else:
+    except WriteBack as exc:
+        content_new = exc.data
+
+    if content != content_new:
+        bc.writefile(manifest_id, content_new)
         return True
+    return False
 
 
 @contextmanager
@@ -234,7 +327,7 @@ def ctx_edit(
     manifest_id: str,
     wrap_me: bool = False,
     extra_data: Optional[Mapping] = None,
-):
+) -> Generator[Union[None, dict, bytes, str], Any, bool]:
     '''Read and yield the file data, and then take in and write back the changed data.
 
     :param bc: `BookContainer` object. 
@@ -259,7 +352,7 @@ def ctx_edit(
             ...
             return data_new
 
-        with ctx_gen_edit(bc, manifest_id) as content:
+        with ctx_edit(bc, manifest_id) as content:
             content_new = operations_on_content(content)
             if content != content_new:
                 raise WriteBack(content_new)
@@ -274,11 +367,13 @@ def ctx_edit(
             else:
                 data['data'] = content_new
     '''
+    content = bc.readfile(manifest_id)
+
     try:
         if wrap_me:
             data = {
                 'manifest_id': manifest_id, 
-                'data': bc.readfile(manifest_id),
+                'data': content,
                 'write_back': True,
             }
             if extra_data:
@@ -287,18 +382,22 @@ def ctx_edit(
                 pass
             if data.get('data') is None or not data.get('write_back'):
                 raise DoNotWriteBack
-            bc.writefile(manifest_id, data['data'])
+            content_new = data['data']
         else:
-            data = yield bc.readfile(manifest_id)
-            if data is None:
+            content_new = yield content
+            if content_new is None:
                 raise DoNotWriteBack
             while (yield None) is not None:
                 pass
-            bc.writefile(manifest_id, data)
-    except WriteBack as exc:
-        bc.writefile(manifest_id, exc.data)
     except DoNotWriteBack:
-        pass
+        return False
+    except WriteBack as exc:
+        content_new = exc.data
+
+    if content != content_new:
+        bc.writefile(manifest_id, content_new)
+        return True
+    return False
 
 
 @contextmanager
@@ -307,7 +406,7 @@ def ctx_edit_sgml(
     manifest_id: str,
     fromstring: Callable = xml_fromstring,
     tostring: Callable[..., Union[bytes, bytearray, str]] = xml_tostring,
-):
+) -> Generator[Any, Any, bool]:
     '''Read and yield the etree object (parsed from a xml file), 
     and then write back the above etree object.
 
@@ -326,28 +425,38 @@ def ctx_edit_sgml(
         def operations_on_etree(etree):
             ...
 
-        with ctx_edit_xml(bc, manifest_id) as etree:
+        with ctx_edit_sgml(bc, manifest_id) as etree:
             operations_on_etree(etree)
     '''
-    tree = fromstring(bc.readfile(manifest_id).encode('utf-8'))
+    content = bc.readfile(manifest_id)
+    tree = fromstring(content.encode('utf-8'))
+
     try:
         if (yield tree) is not None:
             raise DoNotWriteBack
-    except WriteBack as exc:
-        content = exc.data
-        if not isinstance(content, (bytes, bytearray, str)):
-            content = tostring(content)
     except DoNotWriteBack:
-        return
+        return False
+    except WriteBack as exc:
+        content_new = exc.data
+        if not isinstance(content_new, (bytes, bytearray, str)):
+            content_new = tostring(content_new)
     else:
-        content = tostring(tree)
+        content_new = tostring(tree)
 
-    if isinstance(content, (bytes, bytearray)):
-        content = content.decode('utf-8')
-    bc.writefile(manifest_id, content)
+    if isinstance(content_new, (bytes, bytearray)):
+        content_new = content_new.decode('utf-8')
+
+    if content != content_new:
+        bc.writefile(manifest_id, content_new)
+        return True
+    return False
 
 
-def ctx_edit_html(bc, manifest_id: str) -> ContextManager:
+@contextmanager
+def ctx_edit_html(
+    bc, 
+    manifest_id: str,
+) -> Generator[Any, Any, bool]:
     '''Read and yield the etree object (parsed from a html file), 
     and then write back the above etree object.
 
@@ -365,7 +474,7 @@ def ctx_edit_html(bc, manifest_id: str) -> ContextManager:
         with ctx_edit_html(bc, manifest_id) as etree:
             operations_on_etree(etree)
     '''
-    return ctx_edit_sgml(
+    return (yield from ctx_edit_sgml.__wrapped__( # type: ignore
         bc, 
         manifest_id, 
         html_fromstring, 
@@ -373,7 +482,7 @@ def ctx_edit_html(bc, manifest_id: str) -> ContextManager:
             html_tostring, 
             method='xhtml' if 'xhtml' in bc.id_to_mime(manifest_id) else 'html',
         ),
-    )
+    ))
 
 
 def edit_iter(
@@ -462,6 +571,10 @@ def edit_batch(
                       (`manifest_id`, `href`, `mimetype`), and then determine whether to 
                       continue processing.
 
+    :return: Dictionary, keys are the manifest id of all processed files, values are whether 
+             an exception occurs when processing the corresponding file 
+             (whatever the file was modified or not).
+
     Example::
         def operations_on_content(data_old):
             ...
@@ -482,7 +595,8 @@ def edit_batch(
         if not predicate(fid, href, mime):
             continue
         try:
-            with ctx_edit(bc, fid, wrap_me=True) as data:
+            data: dict
+            with ctx_edit(bc, fid, wrap_me=True) as data: # type: ignore
                 data['data'] = operate(data['data'])
             success_status[fid] = True
         except:
@@ -494,6 +608,7 @@ def edit_html_iter(
     bc,
     predicate: Optional[Callable[..., bool]] = None,
     wrap_me: bool = False,
+    yield_cm: bool = False,
 ) -> Generator[Union[None, _Element, dict], Any, None]:
     '''Used to process a collection of specified html files in ePub file one by one
 
@@ -505,6 +620,7 @@ def edit_html_iter(
                       continue processing.
     :param wrap_me: Whether to wrap up object, if True, return a dict containing keys 
                     ('manifest_id', 'href', 'mimetype', 'etree', 'write_back')
+    :param yield_cm: Determines whether each iteration returns the context manager.
 
     Example::
         def operations_on_etree(etree):
@@ -519,7 +635,14 @@ def edit_html_iter(
             # edit_worker.send(0)
 
         # OR equivalent to
-        for data in edit_html_iter(bc, True):
+        for cm in edit_html_iter(bc, yield_cm=True):
+            with cm as etree:
+                operations_on_etree(etree)
+                ## if no need to write back
+                # raise DoNotWriteBack
+
+        # OR equivalent to
+        for data in edit_html_iter(bc, wrap_me=True):
             operations_on_etree(data['etree'])
             ## if no need to write back
             # data['write_back'] = False
@@ -532,22 +655,25 @@ def edit_html_iter(
         mime = bc.id_to_mime(fid)
         if not predicate(fid, href, mime):
             continue
-        with ctx_edit_html(bc, fid) as tree:
-            if wrap_me:
-                data = {
-                    'manifest_id': fid, 
-                    'href': href, 
-                    'mimetype': mime, 
-                    'etree': tree,
-                    'write_back': True,
-                }
-                while (yield data) is not None:
-                    pass
-                if not data.get('write_back', False):
-                    raise DoNotWriteBack
-            else:
-                while (yield data) is not None:
-                    pass
+        if yield_cm:
+            yield ctx_edit_html(bc, fid)
+        else:
+            with ctx_edit_html(bc, fid) as tree:
+                if wrap_me:
+                    data = {
+                        'manifest_id': fid, 
+                        'href': href, 
+                        'mimetype': mime, 
+                        'etree': tree,
+                        'write_back': True,
+                    }
+                    while (yield data) is not None:
+                        pass
+                    if not data.get('write_back', False):
+                        raise DoNotWriteBack
+                else:
+                    while (yield data) is not None:
+                        pass
 
 
 def edit_html_batch(
@@ -564,6 +690,10 @@ def edit_html_batch(
     :param predicate: If it is a callable, it will receive parameters in order (if possible)
                       (`manifest_id`, `href`, `mimetype`), and then determine whether to 
                       continue processing.
+
+    :return: Dictionary, keys are the manifest id of all processed files, values are whether 
+             an exception occurs when processing the corresponding file 
+             (whatever the file was modified or not).
 
     Example::
         def operations_on_etree(etree):
@@ -587,10 +717,20 @@ def edit_html_batch(
     return success_status
 
 
-IterElementInfo = namedtuple(
+class IterElementInfo(namedtuple(
     'IterElementInfo', 
-    ('global_no', 'local_no', 'element', 'etree', 'manifest_id', 'href'),
-)
+    ('global_no', 'local_no', 'element', 'etree', 'manifest_id', 'href', 'mimetype'),
+)):
+    '''The wrapper for the output tuple, contains the following fields
+
+    global_no:   the sequence number of epub (global) output
+    local_no:    the sequence number of each (x)html (local) output
+    element:     (x)html element object
+    etree:       (x)html tree object
+    manifest_id: manifest id
+    href:        OPF href
+    mimetype:    media type
+    '''
 
 
 class EnumSelectorType(Enum):
@@ -675,8 +815,12 @@ def element_iter(
         def operations_on_element(element):
             ...
 
-        for info in element_iter(bc):
+        for info in element_iter(bc, css_selector):
             operations_on_element(info.element)
+
+        # OR equivalent to
+        for element in element_iter(bc, css_selector, wrap_yield=False):
+            operations_on_element(element)
     '''
     select: XPath
     if isinstance(path, str):
@@ -699,7 +843,7 @@ def element_iter(
         if wrap_yield:
             for i, (j, el) in enumerate(enumerate(els, 1), i + 1):
                 yield IterElementInfo(
-                    i, j, el, tree, data['manifest_id'], data['href'])
+                    i, j, el, tree, data['manifest_id'], data['href'], data['mimetype'])
         else:
             yield from els
 
