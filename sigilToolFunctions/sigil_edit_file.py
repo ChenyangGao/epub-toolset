@@ -128,7 +128,7 @@ def make_element(
     if children is not None:
         el.extend(children)
     if tail is not None:
-        el.tail = text
+        el.tail = tail
     return el
 
 
@@ -153,7 +153,7 @@ def make_html_element(
     if children is not None:
         el.extend(children)
     if tail is not None:
-        el.tail = text
+        el.tail = tail
     return el
 
 
@@ -672,7 +672,7 @@ def edit_html_iter(
                     if not data.get('write_back', False):
                         raise DoNotWriteBack
                 else:
-                    while (yield data) is not None:
+                    while (yield tree) is not None:
                         pass
 
 

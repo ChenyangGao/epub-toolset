@@ -1,8 +1,15 @@
 from functools import partial
 from itertools import count
-from os import path, urandom
+from os import path
 from typing import Any, Callable, Mapping, Optional, Union
 from uuid import uuid4
+
+random_bytes: Callable[[int], bytes]
+try:
+    from secrets import token_bytes as random_bytes
+except ImportError:
+    from os import urandom as random_bytes
+# OR from random import randbytes as random_bytes
 
 from util.basechars import BaseCharsProduct
 from util.inspect import argcount, int_to_bytes
@@ -43,6 +50,7 @@ def get_enum_id(*, _c=count(1)) -> int:
     '提供全局递增计数，第一次调用，得到 1，以后每一次调用，得到的是前 1 次的值 + 1'
     return next(_c)
 
+
 @register
 def get_sep_enum_id(attrib: Mapping, *, _c={}) -> int:
     '为每个文件夹中的文件，分别提供递增计数，从 1 开始递增'
@@ -74,17 +82,17 @@ def get_uuid() -> bytes:
 
 
 @register
-def get_urandom(
+def get_random_bytes(
     *, size: int=5, max_collisions: int=8, _dup=set(),
 ) -> bytes:
     '使用 os.urandom 产生一个指定长度（默认为 5）的字节字符串'
-    b = urandom(size)
+    b = random_bytes(size)
     collision_count = 0
     while b in _dup:
         collision_count += 1
         if collision_count > max_collisions:
             raise RuntimeError('Too many collisions!')
-        b = urandom(size)
+        b = random_bytes(size)
     _dup.add(b)
     return b
 

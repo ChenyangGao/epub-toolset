@@ -1,20 +1,13 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 3)
+__version__ = (0, 0, 4)
 
-from lxml.etree import _Element # type: ignore
-from lxml.html import tostring # type: ignore
+from lxml.html import tostring
 
-from utils.form import ask_form
-from utils.sigil_edit_file import DoNotWriteBack, ctx_edit_html
-
-
-# TODO: 编号格式: 用 %d 指代编号，[%d]:1，表示从 1 开始，产生 [1], [2], ...
+from utils.form import AskForm
+from utils.edithtml import DoNotWriteBack, ctx_edit_html
 
 
-def replace_notelabel(
-    el: _Element, 
-    text: str,
-) -> None:
+def replace_notelabel(el, text):
     '修改脚注的标签'
     while el.tag != 'a':
         a = el.find('.//a')
@@ -32,28 +25,22 @@ def replace_notelabel(
 
 
 def renumber_notes(
-    tree: _Element, 
-    start: int = 1,
-    expr: str = '', 
-    method: str = 'csssel',
-    only_modify_text: bool = False,
-) -> int:
+    tree,
+    select,
+    start=1,
+    numfmt='[%d]',
+    only_modify_text=False,
+):
     '批量对脚注标签进行编号'
     body = tree.body
-    if method == 'csssel':
-        notes = body.cssselect(expr)
-    elif method == 'xpath':
-        notes = body.xpath(expr)
-    else:
-        raise NotImplementedError('method %r is not implemented for %r' 
-                                  % (method, renumber_notes))
+    notes = select(body)
 
     if not notes:
         raise DoNotWriteBack
 
     i = None
     for i, note in enumerate(notes, start):
-        noteno = '[%d]' % i
+        noteno = numfmt % i
         if only_modify_text:
             note.text = noteno
         else:
@@ -65,7 +52,7 @@ def renumber_notes(
                 noteref = body.find(".//*[@id='%s']" %noteref_id)
                 if noteref is None:
                     print('没有（被）引用：', 
-                        tostring(note, encoding='utf-8').strip().decode('utf-8'))
+                          tostring(note, encoding='utf-8').strip().decode('utf-8'))
                 else:
                     replace_notelabel(noteref, noteno)
     if i is None:
@@ -74,9 +61,9 @@ def renumber_notes(
 
 
 def run(bc):
-    state = ask_form()
-    if not state.get('expr'):
-        print('你好像没有输入表达式')
+    state = AskForm.ask()
+    if not state:
+        print('已取消')
         return 1
 
     unique_strategy = state.pop('unique_strategy', 'inhtml')

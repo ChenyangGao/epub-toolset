@@ -1,8 +1,11 @@
+import sys
+import struct
+
 from inspect import getfullargspec
 from typing import Callable, Optional
 
 
-__all__ = ['argcount', 'int_to_bytes', 'id_to_bytes']
+__all__ = ['argcount', 'int_to_bytes', 'id_to_bytes', 'get_sys_byteorder']
 
 
 # C pointer bytes length
@@ -20,16 +23,32 @@ def argcount(func: Callable) -> int:
 
 def int_to_bytes(
     i: int, 
-    byteorder: str = 'little', 
+    byteorder: str = sys.byteorder, 
     signed: Optional[bool] = None,
 ) -> bytes:
     if signed is None:
         signed = i < 0
-    return i.to_bytes(i.bit_length() // 8 + 1, byteorder, signed=signed)
+    return i.to_bytes(
+        (i.bit_length() + 7) // 8, 
+        byteorder, 
+        signed=signed
+    )
 
 
-def id_to_bytes(obj, fillup: bool = True) -> bytes:
+def id_to_bytes(
+    obj, 
+    fillup: bool = True,
+    byteorder: str = sys.byteorder,
+) -> bytes:
     if fillup:
-        return id(obj).to_bytes(POINTER_LENGTH, 'little')
-    return int_to_bytes(id(obj), signed=False)
+        return id(obj).to_bytes(POINTER_LENGTH, byteorder)
+    return int_to_bytes(id(obj), byteorder=byteorder, signed=False)
+
+
+def get_sys_byteorder():
+    # return ('big', 'little')[struct.pack('i', 1)[0]]
+    if struct.pack('<L', 0x12345678)[0] == 0x78:
+        return 'little'
+    else:
+        return 'big'
 

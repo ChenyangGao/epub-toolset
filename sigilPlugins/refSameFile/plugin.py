@@ -9,7 +9,7 @@ from urllib.parse import urldefrag, unquote
 
 from utils.relationship import is_first_child, is_first_only_descendant
 from utils.dialog import message_dialog
-from utils.sigil_edit_file import ctx_edit_html
+from utils.edithtml import ctx_edit_html
 
 
 # TODO: 运行插件后，会弹出一个 GUI 的对话框，你可以配置一些选项，可以更好地指导程序完成你的目标
@@ -22,10 +22,7 @@ def _clean_space(s):
     return unescape(s).strip().replace('&nbsp;', '')
 
 
-def _startswith_protocal(
-    s: str, 
-    _cre=re_compile('[_a-zA-Z0-9]+://')
-) -> bool:
+def _startswith_protocal(s, _cre=re_compile('[_a-zA-Z0-9]+://')) -> bool:
     return _cre.match(s) is not None
 
 

@@ -1,29 +1,22 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 1)
+__version__ = (0, 0, 2)
 
-from typing import Optional
 
-from lxml.etree import _Element, ElementBase # type: ignore
+from lxml.etree import ElementBase
 
 
 __all__ = ['is_child', 'is_descendant', 'is_first_child', 'is_only_child', 
            'is_only_descendant', 'is_first_only_descendant']
 
 
-def is_child(
-    el: _Element, 
-    target_el: Optional[_Element] = None,
-) -> bool:
+def is_child(el, target_el=None):
     'Determine whether an element `el` is the child of `target_el`'
     if target_el is None:
         return True
     return el.getparent() is target_el
 
 
-def is_descendant(
-    el: _Element, 
-    target_el: Optional[_Element] = None,
-) -> bool:
+def is_descendant(el, target_el=None):
     'Determine whether an element `el` is the descendant of `target_el`'
     if target_el is None:
         return True
@@ -36,11 +29,11 @@ def is_descendant(
 
 
 def is_first_child(
-    el: _Element,
-    target_el: Optional[_Element] = None,
-    consider_text_sibings: bool = True,
-    consider_only_elementbase: bool = False,
-) -> bool:
+    el,
+    target_el=None,
+    consider_text_sibings=True,
+    consider_only_elementbase=False,
+):
     '''Determine whether an element `el` is the first child of 
     its parent (if any). 
     If `target_el` is specified, then `target_el` must be the parent 
@@ -63,11 +56,11 @@ def is_first_child(
 
 
 def is_only_child(
-    el: _Element, 
-    target_el: Optional[_Element] = None,
-    consider_text_sibings: bool = True,
-    consider_only_elementbase: bool = False,
-) -> bool:
+    el, 
+    target_el=None,
+    consider_text_sibings=True,
+    consider_only_elementbase=False,
+):
     '''Determine whether an element `el` is the only child of 
     its parent (if any). 
     If `target_el` is specified, then `target_el` must be the parent 
@@ -97,12 +90,12 @@ def is_only_child(
 
 
 def is_only_descendant(
-    el: _Element, 
-    target_el: Optional[_Element] = None,
-    consider_text_sibings: bool = True,
-    consider_only_elementbase: bool = False,
-    max_depth: Optional[int] = None,
-) -> bool:
+    el, 
+    target_el=None,
+    consider_text_sibings=True,
+    consider_only_elementbase=False,
+    max_depth=None,
+):
     '''Determine whether an element `el` has ancestor element `target_el` 
     (could be None, means automatic adaptation), 
     and all descendant elements of `target_el` up to `el` are "only child".
@@ -130,12 +123,12 @@ def is_only_descendant(
 
 
 def is_first_only_descendant(
-    el: _Element, 
-    target_el: Optional[_Element] = None,
-    consider_text_sibings: bool = True,
-    consider_only_elementbase: bool = False,
-    max_depth: Optional[int] = None,
-) -> bool:
+    el, 
+    target_el=None,
+    consider_text_sibings=True,
+    consider_only_elementbase=False,
+    max_depth=None,
+):
     '''Determine whether an element `el` has ancestor element `target_el` 
     (could be None, means automatic adaptation), and the child of the 
     "first child" of `target_el` (if any) up to `el` are "only child".
