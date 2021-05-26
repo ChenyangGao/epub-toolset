@@ -1,5 +1,6 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
 __version__ = (0, 0, 9)
+__stage__ = 'rev4'
 
 from contextlib import ExitStack
 from html import unescape
@@ -22,7 +23,7 @@ def _clean_space(s):
     return unescape(s).strip().replace('&nbsp;', '')
 
 
-def _startswith_protocal(s, _cre=re_compile('[_a-zA-Z0-9]+://')) -> bool:
+def _startswith_protocal(s, _cre=re_compile('[_a-zA-Z0-9]+://')):
     return _cre.match(s) is not None
 
 
@@ -84,6 +85,24 @@ def run(bc):
                 else:
                     continue
 
+                # 假设：因为在 脚注引用 前面有对应的被注释的文本，所以在这个文本后面直接相邻的元素才是某个 脚注引用 的整体
+                parent_el = noteref.getparent()
+                while (parent_el is not None 
+                       and len(parent_el) == 1 
+                       and not (parent_el.text and parent_el.text.strip())
+                ):
+                    noteref, parent_el = parent_el, noteref.getparent()
+
+                # 假设：脚注引用前面应该有文本节点
+                # TODO: 质疑：文本也可以直接包含在某个标签内，或许应该判断，父节点下面有不同元素类型存在
+                prev_el = noteref.getprevious()
+                if prev_el is not None:
+                    if not (prev_el.tail and prev_el.tail.strip()):
+                        continue
+                else:
+                    if parent_el is None or not (parent_el.text and parent_el.text.strip()):
+                        continue
+
                 # 我假设 脚注引用 不应该是首位唯一孩子，应该是某一元素节点或文本节点的后兄弟节点的唯一后代
                 if is_first_only_descendant(noteref):
                     continue
@@ -111,7 +130,7 @@ def run(bc):
                 else:
                     etree_footnote = item_footnote['data']
                 # 假设: 被引用注释是任意元素 x，它内部有一个<a>元素，它也引用了引用它的元素，
-                #   并且 x 是它父元素的首位孩子，则它的父元素可以作为 footnote 整体（递归）
+                #      并且 x 是它父元素的首位孩子，则它的父元素可以作为 footnote 整体（递归）
                 # 需要被引用注释存在，如果不存在，则跳过
                 footnote = etree_footnote.find('.//*[@id="%s"]' % footnote_id)
                 if footnote is None:
@@ -150,6 +169,8 @@ def run(bc):
                         footnote.xpath('following-sibling::*[local-name(.) != "%s"]' %footnote.tag)
                     ):
                         footnote = p_footnote
+                        continue
+                    break
 
                 # 或者更具体的：
                 # url = bc.id_to_href(item_footnote['id])
