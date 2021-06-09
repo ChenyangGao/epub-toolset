@@ -1,11 +1,10 @@
 #! /usr/bin/env python3
 # coding: utf-8
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 3, 9)
+__version__ = (0, 4)
 
 from os import path
-from re import compile as re_compile, escape as re_escape
-from shutil import copyfile
+from re import compile as re_compile
 from typing import (
     Callable, Collection, Dict, List, Optional, Tuple, Union
 )
@@ -13,18 +12,49 @@ from urllib.parse import quote, unquote
 from xml.etree.ElementTree import fromstring
 from zipfile import ZipFile, ZipInfo
 
-from util.path import add_stem_suffix, replace_stem
+from util.path import add_stem_suffix
 from util.inspect import argcount
 
 
 PROJECT_FOLDER = path.dirname(__file__)
 SRC_FOLDER = path.join(PROJECT_FOLDER, 'src')
 
+CRE_NAME = re_compile(r'(?P<name>.*?)(?P<append>~[_0-9a-zA-Z]+)?(?P<suffix>\.[_0-9a-zA-z]+)')
+CRE_PROT = re_compile(r'\w+:/')
+CRE_LINK = re_compile(r'([^#?]+)(.*)')
+CRE_HREF = re_compile(r'(<[^/][^>]+\bhref=")(?P<link>[^>"]+)')
+CRE_SEC  = re_compile(r'(<[^/][^>]+\bsrc=")(?P<link>[^>"]+)')
+CRE_URL  = re_compile(r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
 
-# TODO: 下面的方法其实是不够精确的，以后会根据 mime-type 进行判断是不是文本文件
-# 忽略的文件夹，这些文件夹内的所有文件不进行文本替换
-DIR_IGNORED: Tuple[str, ...] = ('Fonts/', 'fonts/', 'Images/', 'images/', 
-                                'Audio/', 'audio/', 'Video/', 'video/')
+
+def get_full_path(file_path, ref_path):
+    if ref_path.startswith('/'):
+        return ref_path
+
+    dir_path = path.dirname(file_path)
+
+    if not ref_path.startswith('.'):
+        return path.join(dir_path, ref_path)
+
+    dir_parts = dir_path.split('/')
+    if dir_parts[0] == '':
+        dir_parts[0] = '/'
+
+    ref_parts = ref_path.split('/')
+    advance_count = 0
+    for i, p in enumerate(ref_parts):
+        if p and p.strip('.') == '':
+            advance_count += len(p) - 1
+            continue
+        break
+    else:
+        i += 1
+
+    ref_parts = ref_parts[i:]
+    if advance_count:
+        dir_parts = dir_parts[:-advance_count]
+
+    return path.join(*dir_parts, *ref_parts)
 
 
 def get_elnode_attrib(elnode) -> dict:
@@ -35,7 +65,7 @@ def get_elnode_attrib(elnode) -> dict:
 
 
 def get_opf_path(
-    epubzf: ZipFile, _cre=re_compile('full-path="([^"]+)')
+    src_epub: ZipFile, _cre=re_compile('full-path="([^"]+)')
 ) -> str:
     '''获取 ePub 文件中的 OPF 文件的路径
     该路径可能位于 META-INF/container.xml 文件的这个 xpath 路径下
@@ -43,7 +73,7 @@ def get_opf_path(
     所以我尝试直接根据元素的 full-path 属性来判断，但这可能不是普遍适用的
     '''
     content = unquote(
-        epubzf.read('META-INF/container.xml').decode())
+        src_epub.read('META-INF/container.xml').decode())
     match = _cre.search(content)
     if match is None:
         raise Exception('OPF file path not found')
@@ -51,14 +81,14 @@ def get_opf_path(
 
 
 def get_opf_itemmap(
-    epubzf: ZipFile, 
+    src_epub: ZipFile, 
     opf_path: Union[str, ZipInfo, None] = None,
     _cre=re_compile('<item .*?/>'),
 ) -> dict:
     '读取 OPF 文件的所有 item 标签，返回 href: item 标签属性的字典'
     if opf_path is None:
-        opf_path = get_opf_path(epubzf)
-    opf = unquote(epubzf.read(opf_path).decode())
+        opf_path = get_opf_path(src_epub)
+    opf = unquote(src_epub.read(opf_path).decode())
     return {
         attrib['href']: attrib
         for attrib in map(get_elnode_attrib, _cre.findall(opf))
@@ -66,67 +96,52 @@ def get_opf_itemmap(
     }
 
 
-def make_key_newname_map(
+def make_repl_map(
     itemmap: dict, 
     generate: Callable[..., str],
-    scan_dirs: Optional[Tuple[str, ...]],
+    scan_dirs: Optional[Tuple[str, ...]] = None,
     quote_names: bool = False,
-    mode: str = 'optimistic',
-    _cre=re_compile(r'(?P<suffix>~[a-zA-Z]+)\.[a-zA-z]+$'),
 ) -> Tuple[dict, list]:
-    mode_idx: int = ('optimistic', 'pessimistic').index(mode)
-
-    key_newname_map: Dict[str, str] = {}
-    key_newname_repl: List[Tuple[str, Union[str, Callable]]] = []
-    stem_map: Dict[str, str] = {}
+    repl_map: Dict[str, str] = {}
+    key_map:  Dict[str, str] = {}
     noarg = argcount(generate) == 0
 
-    def register(key, stem):
-        newfullname: str = replace_stem(key, stem, '/')
-        orgname: str = path.basename(key)
-        newname: str = path.basename(newfullname)
-        key_newname_map[key] = newfullname
-        # 据说在多看阅读中，混淆过的文件名可能不能被识别，比如在 css 中 import 另一 css，
-        # 所以可能需要对链接进行 quote 编码
-        if quote_names:
-            newfullname = quote(newfullname)
-        if mode_idx == 0:
-            key_newname_repl.append((key, newfullname))
-        elif mode_idx == 1:
-            repfunc: Callable = re_compile(r'\b%s\b' % re_escape(orgname)).sub
-            key_newname_repl.append((
-                '\b'+orgname, 
-                lambda s, *, _r=repfunc, _rp=newname: _r(_rp, s)
-            ))
+    for href, attrib in itemmap.items():
+        if href == 'toc.ncx':
+            continue
+        if scan_dirs is not None:
+            if not href.startswith(scan_dirs):
+                continue
 
-    stem: str
-    for key, attrib in itemmap.items():
+        href_dir = path.dirname(href)
+        parts = href.split('/')
+        name = parts[-1]
+        name_dict = CRE_NAME.fullmatch(name).groupdict()
+        key = (href_dir, name_dict['name'], name_dict['suffix'])
+
         # 据说在多看阅读，封面图片可以有 2 个版本，形如 cover.jpg 和 cover~slim.jpg，
         # 其中 cover.jpg 适用于 4:3 屏，cover~slim.jpg 适用于 16:9 屏。
         # 由于遇到上面这种设计，我不知道是不是还有类似设计，所以我用一个正则表达式，
-        # 匹配扩展名前的 ~[a-zA-Z]+ 部分，当成是一种特殊的后缀，我特意增加了一组逻辑，
+        # 匹配扩展名前的 ~[_0-9a-zA-Z]+ 部分，当成是一种特殊的后缀，为此我特意增加了一组逻辑，
         # 如果两个文件名只有这种后缀部分不同，那么改名后也保证只有这种后缀部分不同，
         # 比如上述的封面图片，被改名后，会变成形如 newname.jpg 和 newname~slim.jpg
-        if scan_dirs is not None:
-            if not key.startswith(scan_dirs):
-                continue
-
-        match = _cre.search(key)
-        if match is not None:
-            pstart, ptsop = match.regs[1]
-            key_ = key[:pstart] + key[ptsop:]
-            if key_ in stem_map:
-                stem = stem_map[key_]
-            else:
-                stem = stem_map[key_] = generate() if noarg else generate(attrib)
-            stem += match['suffix']
-        elif key in stem_map:
-            stem = stem_map[key]
+        if key in key_map:
+            generate_name = key_map[key]
         else:
-            stem = stem_map[key] = generate() if noarg else generate(attrib)
-        register(key, stem)
+            generate_name = key_map[key] = generate() if noarg else generate(attrib)
 
-    return key_newname_map, key_newname_repl
+        suffix = name_dict['suffix']
+        if generate_name.endswith(name_dict['suffix']):
+            suffix = ''
+
+        newname = '%s%s%s' % (generate_name, name_dict['append'] or '', suffix)
+        if len(parts) > 1:
+            newname = path.join(parts[0], newname)
+        if quote_names:
+            newname = quote(newname)
+        repl_map[href] = newname
+
+    return repl_map
 
 
 def rename_in_epub(
@@ -134,11 +149,9 @@ def rename_in_epub(
     generate_new_name: Callable[..., str] = lambda attrib: attrib['id'],
     stem_suffix: str = '-repack',
     quote_names: bool = False,
-    mode: str = 'optimistic',
     remove_encrypt_file: bool = False,
     add_encrypt_file: bool = False,
     scan_dirs: Optional[Collection[str]] = None,
-    ignore_dirs: Tuple[str, ...] = DIR_IGNORED,
 ) -> str:
     '对 ePub 内在 OPF 文件所在文件夹或子文件夹下的文件修改文件名'
     epub_path2 = add_stem_suffix(epub_path, stem_suffix)
@@ -152,28 +165,61 @@ def rename_in_epub(
             dir_ += '/'
         return dir_
 
+    def css_repl(m):
+        md = m.groupdict()
+        if md['dlink']:
+            link = unquote(md['dlink'])
+        elif md['slink']:
+            link = unquote(md['slink'])
+        elif md['link']:
+            link = unquote(md['link'])
+        else:
+            return m[0]
+
+        if link.startswith(('#', '/')) or CRE_PROT.match(link) is not None:
+            return m[0]
+
+        uri, suf = CRE_LINK.fullmatch(link).groups()
+        full_uri = get_full_path(opf_href, uri)
+        if full_uri in repl_map:
+            return 'url("%s%s%s")' % (advance_str, repl_map[full_uri], suf)
+        else:
+            return m[0]
+
+    def hxml_repl(m):
+        link = unquote(m['link'])
+        if link.startswith(('#', '/')) or CRE_PROT.match(link) is not None:
+            return m[0]
+
+        uri, suf = CRE_LINK.fullmatch(link).groups()
+        full_uri = get_full_path(opf_href, uri)
+        if full_uri in repl_map:
+            return m[1] + advance_str + repl_map[full_uri] + suf
+        else:
+            return m[0]
+
     if scan_dirs is not None:
         if '.' in scan_dirs or '' in scan_dirs:
             scan_dirs = None
         else:
             scan_dirs = tuple(map(normalize_dirname, scan_dirs))
 
-    with ZipFile(epub_path, mode='r') as epubzf, \
-            ZipFile(epub_path2, mode='w') as epubzf2:
-        opf_path = get_opf_path(epubzf)
+    with ZipFile(epub_path, mode='r') as src_epub, \
+            ZipFile(epub_path2, mode='w') as tgt_epub:
+        opf_path = get_opf_path(src_epub)
         opf_root, opf_name = path.split(opf_path)
         opf_root += '/'
+        opf_root_len = len(opf_root)
 
-        itemmap = get_opf_itemmap(epubzf, opf_path)
-        key_newname_map, key_newname_repl = make_key_newname_map(
+        itemmap = get_opf_itemmap(src_epub, opf_path)
+        repl_map = make_repl_map(
             itemmap=itemmap, 
             generate=generate_new_name,
             scan_dirs=scan_dirs,
             quote_names=quote_names,
-            mode=mode,
         )
 
-        for zipinfo in epubzf.filelist:
+        for zipinfo in src_epub.filelist:
             if zipinfo.is_dir():
                 continue # ignore directories
 
@@ -186,57 +232,51 @@ def rename_in_epub(
                     has_encrypt_file = True
 
             if not zi_filename.startswith(opf_root):
-                epubzf2.writestr(zipinfo, epubzf.read(zipinfo))
+                tgt_epub.writestr(zipinfo, src_epub.read(zipinfo))
                 continue
 
-            key: str = zi_filename[len(opf_root):]  
-            if key not in itemmap and key != opf_name:
+            opf_href: str = zi_filename[opf_root_len:]  
+            if opf_href not in itemmap and opf_href != opf_name:
                 print('⚠️ 跳过文件', zi_filename, 
                       '，因为它未在 %s 内被列出' % opf_path)
                 continue
 
             if is_empty_scan_dirs:
-                content = epubzf.read(zipinfo)
+                content = src_epub.read(zipinfo)
                 zipinfo.file_size = len(content)
-                epubzf2.writestr(zipinfo, content)
+                tgt_epub.writestr(zipinfo, content)
                 continue
 
-            # 针对 OPF 文件专门处理，避免当 id 和 href 相等时，id 也被替换
-            if key == opf_name:
-                content = epubzf.read(zipinfo)
-                text = unquote(content.decode())
-                for key, name in key_newname_map.items():
-                    text = text.replace('href="' + key, 'href="' + name)
-                    text = text.replace('idref="' + key, 'idref="' + name)
-                content = text.encode()
-                zipinfo.file_size = len(content)
-                epubzf2.writestr(zipinfo, content)
-                continue
+            is_opf_file = opf_href == opf_name
 
-            content = epubzf.read(zipinfo)
-            if key in key_newname_map:
-                zipinfo.filename = opf_root + key_newname_map[key]
-
-            if ignore_dirs and key.startswith(ignore_dirs):
-                epubzf2.writestr(zipinfo, content)
-                continue
-
-            try:
-                text = unquote(content.decode())
-            except UnicodeDecodeError:
-                epubzf2.writestr(zipinfo, content)
+            if is_opf_file:
+                mimetype = None
+                advance_str = ''
             else:
-                for key2, replace in key_newname_repl:
-                    if callable(replace):
-                        text = replace(text)
-                    elif type(key2) is str:
-                        text = text.replace(key2, replace)
-                content = text.encode()
-                zipinfo.file_size = len(content)
-                epubzf2.writestr(zipinfo, content)
+                item_attrib = itemmap[opf_href]
+                mimetype = item_attrib['media-type']
+                if opf_href in repl_map:
+                    advance_str = '../' * (len(repl_map[opf_href].split('/')) - 1)
+
+            content = src_epub.read(zipinfo)
+
+            if is_opf_file or mimetype in ('text/css', 'text/html', 'application/xml', 
+                                        'application/xhtml+xml', 'application/x-dtbncx+xml'):
+                text = content.decode('utf-8')
+                if is_opf_file or mimetype != 'text/css':
+                    text_new = CRE_HREF.sub(hxml_repl, text)
+                    text_new = CRE_SEC.sub(hxml_repl, text_new)
+                else:
+                    text_new = CRE_URL.sub(css_repl, text)
+                if text != text_new:
+                    content = text_new.encode('utf-8')
+                    zipinfo.file_size = len(content)
+
+            zipinfo.filename = opf_root + unquote(repl_map.get(opf_href, opf_href))
+            tgt_epub.writestr(zipinfo, content)
 
         if add_encrypt_file and not has_encrypt_file:
-            epubzf2.write(
+            tgt_epub.write(
                 path.join(SRC_FOLDER, 'encryption.xml'), 
                 'META-INF/encryption.xml'
             )
@@ -245,6 +285,7 @@ def rename_in_epub(
 
 
 if __name__ == '__main__':
+    # TODO: 添加一个命令行参数，只有在文件名满足一定的模式的情况下才进行改名
     from argparse import ArgumentParser, RawTextHelpFormatter
 
     from generate_method import (
@@ -291,22 +332,10 @@ if __name__ == '__main__':
                     help='对文件名用一些字符的可重排列进行编码')
     ap.add_argument('-ch', '--chars', default=BASE4CHARS, 
                     help='用于编码的字符集（不可重复，字符集大小应该是2、4、16、256之一），'
-                         '如果你没有指定 -n 或 --encode_filenames，此参数被略，默认值是 '
+                         '如果你没有指定 -n 或 --encode_filenames，此参数被忽略，默认值是 '
                          + BASE4CHARS)
     ap.add_argument('-q', '--quote-names', dest='quote_names', action='store_true', 
                     help='对改动的文件名进行百分号 %% 转义')
-    ap.add_argument('-md', '--mode', choices=('1', 'o', 'optimistic', '2', 'p', 'pessimistic'), 
-                    default='1', type={
-                        '1': 'optimistic',
-                        'o': 'optimistic',
-                        'optimistic': 'optimistic',
-                        '2': 'pessimistic',
-                        'p': 'pessimistic',
-                        'pessimistic': 'pessimistic',
-                    }.__getitem__, help='改名模式：\n'
-                        '    1 | o | optimistic:  乐观模式（默认）。所有文件的引用路径都相对于 OPF 文件所在的文件夹\n'
-                        '    2 | p | pessimistic: 悲观模式。有些文件的引用路径不相对于 OPF 文件所在的文件夹，比如引用同一文件夹内的文件只需要直接写文件名\n'
-                    )
     ap.add_argument('-x', '--suffix', default='-repack', 
                     help='已处理的 ePub 文件名为在原来的 ePub 文件名的扩展名前面添加后缀，默认值是 -repack')
     args = ap.parse_args()
@@ -327,7 +356,6 @@ if __name__ == '__main__':
             scan_dirs=args.scan_dirs,
             stem_suffix=args.suffix, 
             quote_names=args.quote_names,
-            mode=args.mode,
             generate_new_name=method,
             remove_encrypt_file=args.remove_encrypt_file,
             add_encrypt_file=args.add_encrypt_file,
