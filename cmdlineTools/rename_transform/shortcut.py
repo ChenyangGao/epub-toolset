@@ -16,12 +16,19 @@ import subprocess
 import sys
 
 from os import path
+from platform import system
 
 PROJECT_FOLDER = path.dirname(__file__)
 MAIN_MODULE_FILE = path.join(PROJECT_FOLDER, 'main.py')
 
+
 if args.confound:
-    subprocess.run([sys.executable, MAIN_MODULE_FILE, '-ad', '-r', '-m', '6', '-n', '-q', '-l', *args.pathes])
+    subprocess.run(
+        [sys.executable, MAIN_MODULE_FILE, '-ad', '-r', 
+        '-m', '6', '-n', '-q', '-l', *args.pathes], 
+        shell=system()=='Windows')
 else:
-    subprocess.run([sys.executable, MAIN_MODULE_FILE, '-m', '3', '-rm', '-l', *args.pathes])
+    subprocess.run(
+        [sys.executable, MAIN_MODULE_FILE, '-m', '3', '-rm', '-l', *args.pathes], 
+        shell=system()=='Windows')
 
