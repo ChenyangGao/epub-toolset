@@ -1,9 +1,16 @@
+#! /usr/bin/env python3
+# coding: utf-8
+
+__author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
+__version__ = (0, 0, 2)
+__all__ = ['BaseCharsEncodeError', 'BaseCharsDecodeError', 'BaseChars', 'BaseCharsProduct']
+
+
 from itertools import product
 from types import MappingProxyType
-from typing import Dict, Tuple
+from typing import Any, ByteString, Dict, Tuple
 
-
-__all__ = ['BaseCharsEncodeError', 'BaseCharsDecodeError', 'BaseChars', 'BaseCharsProduct']
+from .matter import astype_bytes
 
 
 class BaseCharsEncodeError(ValueError):
@@ -31,7 +38,7 @@ class BaseChars:
         self._bits: int = l.bit_length() - 1
         self._sup: int = (1 << self._bits) - 1
 
-    def encode(self, n: int) -> str:
+    def encode_int(self, n: int) -> str:
         chars: str = self._chars
         sup: int = self._sup
         try:
@@ -42,7 +49,7 @@ class BaseChars:
         except Exception as exc:
             raise BaseCharsEncodeError from exc
 
-    def decode(self, s: str) -> int:
+    def decode_int(self, s: str) -> int:
         bits: int = self._bits
         charmap: Dict[str, int] = self._charmap
         n: int = 0
@@ -53,12 +60,22 @@ class BaseChars:
         except Exception as exc:
             raise BaseCharsDecodeError from exc
 
-    def encode_bytes(self, b: bytes) -> str:
-        return self.encode(int.from_bytes(b, 'big'))
+    def encode_bytes(self, b: ByteString) -> str:
+        return self.encode_int(int.from_bytes(b, 'big'))
 
     def decode_bytes(self, s: str) -> bytes:
-        n: int = self.decode(s)
+        n: int = self.decode_int(s)
         return int.to_bytes(n, (n.bit_length() + 7) // 8, 'big')
+
+    def encode(self, s: Any) -> str:
+        if isinstance(s, int):
+            return self.encode_int(s)
+        elif isinstance(s, ByteString):
+            return self.encode_bytes(s)
+
+        return self.encode_bytes(astype_bytes(s))
+
+    decode = decode_bytes
 
 
 class BaseCharsProduct:
@@ -89,18 +106,26 @@ class BaseCharsProduct:
             {v: k for k, v in self._ivmap.items()}
         )
 
-    def encode(self, b: bytes) -> str:
+    def encode_bytes(self, b: ByteString) -> str:
         ivmap = self._ivmap
         try:
             return ''.join(ivmap[i] for i in b)
         except Exception as exc:
             raise BaseCharsEncodeError from exc
 
-    def decode(self, s: str) -> bytes:
+    def decode_bytes(self, s: str) -> bytes:
         repeat: int = self._repeat
         try:
             return bytes(self._vimap[s[i:i+repeat]] 
                          for i in range(0, len(s), repeat))
         except Exception as exc:
             raise BaseCharsDecodeError from exc
+
+    def encode(self, s: Any) -> str:
+        if isinstance(s, ByteString):
+            return self.encode_bytes(s)
+
+        return self.encode_bytes(astype_bytes(s))
+
+    decode = decode_bytes
 

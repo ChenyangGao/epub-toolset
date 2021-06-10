@@ -1,7 +1,77 @@
 #! /usr/bin/env python3
 # coding: utf-8
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 4)
+__version__ = (0, 4, 1)
+
+
+from argparse import ArgumentParser, RawTextHelpFormatter
+from generate_method import BASE4CHARS, NAME_GENERATORS
+
+
+METHODS_LIST = list(NAME_GENERATORS.values())
+METHODS_DOC  = '\n'.join(
+    f'[{i}] {n}:\n    {m.__doc__}' 
+    for i, (n, m) in enumerate(NAME_GENERATORS.items()))
+
+# TODO: 添加一个命令行参数，只有在文件名满足一定的模式的情况下才进行改名
+ap = ArgumentParser(
+    description='对 ePub 内在 OPF 文件所在文件夹或子文件夹下的文件修改文件名',
+    formatter_class=RawTextHelpFormatter,
+)
+ap.add_argument('-rm', '--remove-encrypt-file', dest='remove_encrypt_file', action='store_true', 
+                help='移除加密文件 META-INF/encryption.xml')
+ap.add_argument('-ad', '--add-encrypt-file', dest='add_encrypt_file', action='store_true', 
+                help='添加加密文件 META-INF/encryption.xml。如果已有加密文件，但未指定'
+                        '-rm 或 --remove-encrypt-file，则忽略。')
+ap.add_argument('-l', '--epub-list', dest="list", nargs='+', 
+                help='待处理的 ePub 文件（有多个用空格隔开）')
+# TODO: 以后还会加入对 OPS 文件内 item 元素的 id 值进行正则表达式筛选
+ap.add_argument('-s', '--scan-dirs', dest="scan_dirs", nargs='*', 
+                help='在 OPF 文件所在文件夹内，会对传入的这组路径内的文件夹及其子文件夹内的文件会被重命名，'
+                        '如果不指定此参数（相当于传入 \'.\' 或 \'\'）则扫描 OPF 文件所在文件夹下所有文件夹，'
+                        '但如果只指定，却不传任何参数，则不会对文件进行改名（这适用于只想添加或移除加密文件）。'
+                        # TODO: 增加扩展语法，提供模式匹配
+                        #'\n我更提供了一下扩展语法：\n'
+                        #'    1) pattern      搜索和 pattern 相等的文件夹路径\n'
+                        #'    2) str:pattern  等同于 1)，搜索和 pattern 相等的文件夹路径\n'
+                        #'    3) glob:pattern 把 pattern 视为 glob 模式，搜索和 pattern 相等的文件夹路径\n'
+                        #'    4) re:pattern   把 pattern 视为 正则表达式 模式，搜索和 pattern 相等的文件夹路径\n'
+                )
+ap.add_argument('-r', '--recursive', action='store_true', 
+                help='如果不指定，遇到文件夹时，只扫描这个文件夹内所有.epub 结尾的文件。'
+                        '如果指定，遇到文件夹时，会遍历这个文件夹及其所有子文件夹（如果有的话）'
+                        '下所有 .epub 结尾的文件。')
+ap.add_argument('-g', '--glob', action='store_true', 
+                help='如果指定，则把 -l 参数传入的路径当成 glob 查询模式，如果再指定-r，'
+                        '** 会匹配任何文件和任意多个文件夹或子文件夹')
+ap.add_argument('-raf', '--reset-method-after-files-processed', 
+                dest='reset_method_after_files_processed', action='store_true', 
+                help='每处理完一个文件，就对产生文件名的函数进行重置')
+ap.add_argument('-m', '--method', default='0', 
+                help='产生文件名的策略 （输入数字或名字，默认值 0）\n' + METHODS_DOC)
+ap.add_argument('-n', '--encode-filenames', dest='encode_filenames', action='store_true', 
+                help='对文件名用一些字符的可重排列进行编码')
+ap.add_argument('-ch', '--chars', default=BASE4CHARS, 
+                help='用于编码的字符集（不可重复，字符集大小应该是2、4、16、256之一），'
+                        '如果你没有指定 -n 或 --encode_filenames，此参数被忽略，默认值是 '
+                        + BASE4CHARS)
+ap.add_argument('-q', '--quote-names', dest='quote_names', action='store_true', 
+                help='对改动的文件名进行百分号 %% 转义')
+ap.add_argument('-x', '--suffix', default='-repack', 
+                help='已处理的 ePub 文件名为在原来的 ePub 文件名的扩展名前面添加后缀，默认值是 -repack')
+
+
+def parse_argv(argv):
+    return ap.parse_args(argv)
+
+
+if __name__ == '__main__':
+    from sys import argv
+    if '-h' in argv or '--help' in argv:
+        parse_argv(['-h'])
+
+
+import posixpath
 
 from os import path
 from re import compile as re_compile
@@ -12,8 +82,8 @@ from urllib.parse import quote, unquote
 from xml.etree.ElementTree import fromstring
 from zipfile import ZipFile, ZipInfo
 
-from util.path import add_stem_suffix
-from util.inspect import argcount
+from util.path import relative_path, add_stem_suffix
+from generate_method import make_generator, make_bcp_generator
 
 
 PROJECT_FOLDER = path.dirname(__file__)
@@ -23,38 +93,8 @@ CRE_NAME = re_compile(r'(?P<name>.*?)(?P<append>~[_0-9a-zA-Z]+)?(?P<suffix>\.[_0
 CRE_PROT = re_compile(r'\w+:/')
 CRE_LINK = re_compile(r'([^#?]+)(.*)')
 CRE_HREF = re_compile(r'(<[^/][^>]+\bhref=")(?P<link>[^>"]+)')
-CRE_SEC  = re_compile(r'(<[^/][^>]+\bsrc=")(?P<link>[^>"]+)')
+CRE_SRC  = re_compile(r'(<[^/][^>]+\bsrc=")(?P<link>[^>"]+)')
 CRE_URL  = re_compile(r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
-
-
-def get_full_path(file_path, ref_path):
-    if ref_path.startswith('/'):
-        return ref_path
-
-    dir_path = path.dirname(file_path)
-
-    if not ref_path.startswith('.'):
-        return path.join(dir_path, ref_path)
-
-    dir_parts = dir_path.split('/')
-    if dir_parts[0] == '':
-        dir_parts[0] = '/'
-
-    ref_parts = ref_path.split('/')
-    advance_count = 0
-    for i, p in enumerate(ref_parts):
-        if p and p.strip('.') == '':
-            advance_count += len(p) - 1
-            continue
-        break
-    else:
-        i += 1
-
-    ref_parts = ref_parts[i:]
-    if advance_count:
-        dir_parts = dir_parts[:-advance_count]
-
-    return path.join(*dir_parts, *ref_parts)
 
 
 def get_elnode_attrib(elnode) -> dict:
@@ -98,13 +138,13 @@ def get_opf_itemmap(
 
 def make_repl_map(
     itemmap: dict, 
-    generate: Callable[..., str],
-    scan_dirs: Optional[Tuple[str, ...]] = None,
-    quote_names: bool = False,
+    generate: Callable[..., str], 
+    scan_dirs: Optional[Tuple[str, ...]] = None, 
+    quote_names: bool = False, 
 ) -> Tuple[dict, list]:
+    '基于 OPF 文件的 href 替换映射，键是原来的 href，值是修改后的 href'
     repl_map: Dict[str, str] = {}
     key_map:  Dict[str, str] = {}
-    noarg = argcount(generate) == 0
 
     for href, attrib in itemmap.items():
         if href == 'toc.ncx':
@@ -113,7 +153,7 @@ def make_repl_map(
             if not href.startswith(scan_dirs):
                 continue
 
-        href_dir = path.dirname(href)
+        href_dir = posixpath.dirname(href)
         parts = href.split('/')
         name = parts[-1]
         name_dict = CRE_NAME.fullmatch(name).groupdict()
@@ -128,7 +168,7 @@ def make_repl_map(
         if key in key_map:
             generate_name = key_map[key]
         else:
-            generate_name = key_map[key] = generate() if noarg else generate(attrib)
+            generate_name = key_map[key] = generate(attrib)
 
         suffix = name_dict['suffix']
         if generate_name.endswith(name_dict['suffix']):
@@ -136,7 +176,7 @@ def make_repl_map(
 
         newname = '%s%s%s' % (generate_name, name_dict['append'] or '', suffix)
         if len(parts) > 1:
-            newname = path.join(parts[0], newname)
+            newname = posixpath.join(parts[0], newname)
         if quote_names:
             newname = quote(newname)
         repl_map[href] = newname
@@ -146,7 +186,7 @@ def make_repl_map(
 
 def rename_in_epub(
     epub_path: str, 
-    generate_new_name: Callable[..., str] = lambda attrib: attrib['id'],
+    generate: Callable[..., str] = lambda attrib: attrib['id'],
     stem_suffix: str = '-repack',
     quote_names: bool = False,
     remove_encrypt_file: bool = False,
@@ -180,7 +220,7 @@ def rename_in_epub(
             return m[0]
 
         uri, suf = CRE_LINK.fullmatch(link).groups()
-        full_uri = get_full_path(opf_href, uri)
+        full_uri = relative_path(uri, opf_href, lib=posixpath)
         if full_uri in repl_map:
             return 'url("%s%s%s")' % (advance_str, repl_map[full_uri], suf)
         else:
@@ -192,7 +232,7 @@ def rename_in_epub(
             return m[0]
 
         uri, suf = CRE_LINK.fullmatch(link).groups()
-        full_uri = get_full_path(opf_href, uri)
+        full_uri = relative_path(uri, opf_href, lib=posixpath)
         if full_uri in repl_map:
             return m[1] + advance_str + repl_map[full_uri] + suf
         else:
@@ -207,14 +247,14 @@ def rename_in_epub(
     with ZipFile(epub_path, mode='r') as src_epub, \
             ZipFile(epub_path2, mode='w') as tgt_epub:
         opf_path = get_opf_path(src_epub)
-        opf_root, opf_name = path.split(opf_path)
+        opf_root, opf_name = posixpath.split(opf_path)
         opf_root += '/'
         opf_root_len = len(opf_root)
 
         itemmap = get_opf_itemmap(src_epub, opf_path)
         repl_map = make_repl_map(
             itemmap=itemmap, 
-            generate=generate_new_name,
+            generate=generate,
             scan_dirs=scan_dirs,
             quote_names=quote_names,
         )
@@ -249,10 +289,9 @@ def rename_in_epub(
 
             is_opf_file = opf_href == opf_name
 
-            if is_opf_file:
-                mimetype = None
-                advance_str = ''
-            else:
+            advance_str = ''
+            mimetype = None
+            if opf_href in itemmap:
                 item_attrib = itemmap[opf_href]
                 mimetype = item_attrib['media-type']
                 if opf_href in repl_map:
@@ -265,7 +304,7 @@ def rename_in_epub(
                 text = content.decode('utf-8')
                 if is_opf_file or mimetype != 'text/css':
                     text_new = CRE_HREF.sub(hxml_repl, text)
-                    text_new = CRE_SEC.sub(hxml_repl, text_new)
+                    text_new = CRE_SRC.sub(hxml_repl, text_new)
                 else:
                     text_new = CRE_URL.sub(css_repl, text)
                 if text != text_new:
@@ -284,66 +323,18 @@ def rename_in_epub(
     return epub_path2
 
 
-if __name__ == '__main__':
-    # TODO: 添加一个命令行参数，只有在文件名满足一定的模式的情况下才进行改名
-    from argparse import ArgumentParser, RawTextHelpFormatter
+def main(argv: Optional[List[str]] = None):
+    args = parse_argv(argv)
 
-    from generate_method import (
-        BASE4CHARS, NAME_GENERATORS, make_generator, make_bcp_generator
-    )
-
-    methods_list = list(NAME_GENERATORS.values())
-    doc = '\n'.join(f'[{i}] {n}:\n    {m.__doc__}' 
-                    for i, (n, m) in enumerate(NAME_GENERATORS.items()))
-
-    ap = ArgumentParser(
-        description='对 ePub 内在 OPF 文件所在文件夹或子文件夹下的文件修改文件名',
-        formatter_class=RawTextHelpFormatter,
-    )
-    ap.add_argument('-rm', '--remove-encrypt-file', dest='remove_encrypt_file', action='store_true', 
-                    help='移除加密文件 META-INF/encryption.xml')
-    ap.add_argument('-ad', '--add-encrypt-file', dest='add_encrypt_file', action='store_true', 
-                    help='添加加密文件 META-INF/encryption.xml。如果已有加密文件，但未指定'
-                         '-rm 或 --remove-encrypt-file，则忽略。')
-    ap.add_argument('-l', '--epub-list', dest="list", nargs='+', 
-                    help='待处理的 ePub 文件（有多个用空格隔开）')
-    # TODO: 以后还会加入对 OPS 文件内 item 元素的 id 值进行正则表达式筛选
-    ap.add_argument('-s', '--scan-dirs', dest="scan_dirs", nargs='*', 
-                    help='在 OPF 文件所在文件夹内，会对传入的这组路径内的文件夹及其子文件夹内的文件会被重命名，'
-                         '如果不指定此参数（相当于传入 \'.\' 或 \'\'）则扫描 OPF 文件所在文件夹下所有文件夹，'
-                         '但如果只指定，却不传任何参数，则不会对文件进行改名（这适用于只想添加或移除加密文件）。'
-                         # TODO: 增加扩展语法，提供模式匹配
-                         #'\n我更提供了一下扩展语法：\n'
-                         #'    1) pattern      搜索和 pattern 相等的文件夹路径\n'
-                         #'    2) str:pattern  等同于 1)，搜索和 pattern 相等的文件夹路径\n'
-                         #'    3) glob:pattern 把 pattern 视为 glob 模式，搜索和 pattern 相等的文件夹路径\n'
-                         #'    4) re:pattern   把 pattern 视为 正则表达式 模式，搜索和 pattern 相等的文件夹路径\n'
-                    )
-    ap.add_argument('-r', '--recursive', action='store_true', 
-                    help='如果不指定，遇到文件夹时，只扫描这个文件夹内所有.epub 结尾的文件。'
-                         '如果指定，遇到文件夹时，会遍历这个文件夹及其所有子文件夹（如果有的话）'
-                         '下所有 .epub 结尾的文件。')
-    ap.add_argument('-g', '--glob', action='store_true', 
-                    help='如果指定，则把 -l 参数传入的路径当成 glob 查询模式，如果再指定-r，'
-                         '** 会匹配任何文件和任意多个文件夹或子文件夹')
-    ap.add_argument('-m', '--method', default='0', 
-                    help='产生文件名的策略 （输入数字或名字，默认值 0）\n' + doc)
-    ap.add_argument('-n', '--encode-filenames', dest='encode_filenames', action='store_true', 
-                    help='对文件名用一些字符的可重排列进行编码')
-    ap.add_argument('-ch', '--chars', default=BASE4CHARS, 
-                    help='用于编码的字符集（不可重复，字符集大小应该是2、4、16、256之一），'
-                         '如果你没有指定 -n 或 --encode_filenames，此参数被忽略，默认值是 '
-                         + BASE4CHARS)
-    ap.add_argument('-q', '--quote-names', dest='quote_names', action='store_true', 
-                    help='对改动的文件名进行百分号 %% 转义')
-    ap.add_argument('-x', '--suffix', default='-repack', 
-                    help='已处理的 ePub 文件名为在原来的 ePub 文件名的扩展名前面添加后缀，默认值是 -repack')
-    args = ap.parse_args()
     try:
         method = NAME_GENERATORS[args.method]
     except KeyError:
         method_index = int(args.method)
-        method = methods_list[method_index]
+        method = METHODS_LIST[method_index]
+
+    reset = None
+    if args.reset_method_after_files_processed:
+        reset = getattr(method, 'reset', None)
 
     if args.encode_filenames:
         method = make_bcp_generator(method, args.chars)
@@ -356,7 +347,7 @@ if __name__ == '__main__':
             scan_dirs=args.scan_dirs,
             stem_suffix=args.suffix, 
             quote_names=args.quote_names,
-            generate_new_name=method,
+            generate=method,
             remove_encrypt_file=args.remove_encrypt_file,
             add_encrypt_file=args.add_encrypt_file,
         )
@@ -373,6 +364,7 @@ if __name__ == '__main__':
             for fpath in iglob(epub_glob, recursive=args.recursive):
                 if path.isfile(fpath):
                     process_file(fpath)
+                    if reset: reset()
     else:
         from util.path import iter_scan_files
 
@@ -383,6 +375,12 @@ if __name__ == '__main__':
                 for fpath in iter_scan_files(epub, recursive=args.recursive):
                     if fpath.endswith('.epub'):
                         process_file(fpath)
+                        if reset: reset()
             else:
                 process_file(epub)
+                if reset: reset()
+
+
+if __name__ == '__main__':
+    main()
 
