@@ -31,10 +31,9 @@ args = PARSER.parse_args()
 
 is_full_parser = 'full' in args
 
-if is_full_parser:
-    if not (args.path or args.list):
+if not (args.path or args.list):
+    if is_full_parser:
         PARSER.parse_args(['full', '-h'])
-elif not args.path:
     PARSER.parse_args(['-h'])
 
 
@@ -46,8 +45,10 @@ if is_full_parser:
     main(args=args)
 elif args.confuse:
     # 混淆文件名
-    main(['-ad', '-r', '-m', '6', '-raf', '-n', '-q', '-l', *args.path])
+    main(['-ad', '-r', '-m', '6', '-raf', '-n', 
+          '-q', '-l', *args.path, *args.list])
 else:
     # 去除混淆文件名
-    main(['-m', '3', '-raf', '-rm', '-l', *args.path])
+    main(['-m', '3', '-raf', '-rm', '-l', 
+          *args.path, *args.list])
 
