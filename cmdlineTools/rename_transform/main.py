@@ -1,100 +1,42 @@
 #! /usr/bin/env python3
 # coding: utf-8
-__author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 4, 1)
 
 
-from argparse import ArgumentParser, RawTextHelpFormatter
-from generate_method import BASE4CHARS, NAME_GENERATORS
-
-
-METHODS_LIST = list(NAME_GENERATORS.values())
-METHODS_DOC  = '\n'.join(
-    f'[{i}] {n}:\n    {m.__doc__}' 
-    for i, (n, m) in enumerate(NAME_GENERATORS.items()))
-
-# TODO: 添加一个命令行参数，只有在文件名满足一定的模式的情况下才进行改名
-ap = ArgumentParser(
-    description='对 ePub 内在 OPF 文件所在文件夹或子文件夹下的文件修改文件名',
-    formatter_class=RawTextHelpFormatter,
-)
-ap.add_argument('-rm', '--remove-encrypt-file', dest='remove_encrypt_file', action='store_true', 
-                help='移除加密文件 META-INF/encryption.xml')
-ap.add_argument('-ad', '--add-encrypt-file', dest='add_encrypt_file', action='store_true', 
-                help='添加加密文件 META-INF/encryption.xml。如果已有加密文件，但未指定'
-                        '-rm 或 --remove-encrypt-file，则忽略。')
-ap.add_argument('-l', '--epub-list', dest="list", nargs='+', 
-                help='待处理的 ePub 文件（有多个用空格隔开）')
-# TODO: 以后还会加入对 OPS 文件内 item 元素的 id 值进行正则表达式筛选
-ap.add_argument('-s', '--scan-dirs', dest="scan_dirs", nargs='*', 
-                help='在 OPF 文件所在文件夹内，会对传入的这组路径内的文件夹及其子文件夹内的文件会被重命名，'
-                        '如果不指定此参数（相当于传入 \'.\' 或 \'\'）则扫描 OPF 文件所在文件夹下所有文件夹，'
-                        '但如果只指定，却不传任何参数，则不会对文件进行改名（这适用于只想添加或移除加密文件）。'
-                        # TODO: 增加扩展语法，提供模式匹配
-                        #'\n我更提供了一下扩展语法：\n'
-                        #'    1) pattern      搜索和 pattern 相等的文件夹路径\n'
-                        #'    2) str:pattern  等同于 1)，搜索和 pattern 相等的文件夹路径\n'
-                        #'    3) glob:pattern 把 pattern 视为 glob 模式，搜索和 pattern 相等的文件夹路径\n'
-                        #'    4) re:pattern   把 pattern 视为 正则表达式 模式，搜索和 pattern 相等的文件夹路径\n'
-                )
-ap.add_argument('-r', '--recursive', action='store_true', 
-                help='如果不指定，遇到文件夹时，只扫描这个文件夹内所有.epub 结尾的文件。'
-                        '如果指定，遇到文件夹时，会遍历这个文件夹及其所有子文件夹（如果有的话）'
-                        '下所有 .epub 结尾的文件。')
-ap.add_argument('-g', '--glob', action='store_true', 
-                help='如果指定，则把 -l 参数传入的路径当成 glob 查询模式，如果再指定-r，'
-                        '** 会匹配任何文件和任意多个文件夹或子文件夹')
-ap.add_argument('-raf', '--reset-method-after-files-processed', 
-                dest='reset_method_after_files_processed', action='store_true', 
-                help='每处理完一个文件，就对产生文件名的函数进行重置')
-ap.add_argument('-m', '--method', default='0', 
-                help='产生文件名的策略 （输入数字或名字，默认值 0）\n' + METHODS_DOC)
-ap.add_argument('-n', '--encode-filenames', dest='encode_filenames', action='store_true', 
-                help='对文件名用一些字符的可重排列进行编码')
-ap.add_argument('-ch', '--chars', default=BASE4CHARS, 
-                help='用于编码的字符集（不可重复，字符集大小应该是2、4、16、256之一），'
-                        '如果你没有指定 -n 或 --encode_filenames，此参数被忽略，默认值是 '
-                        + BASE4CHARS)
-ap.add_argument('-q', '--quote-names', dest='quote_names', action='store_true', 
-                help='对改动的文件名进行百分号 %% 转义')
-ap.add_argument('-x', '--suffix', default='-repack', 
-                help='已处理的 ePub 文件名为在原来的 ePub 文件名的扩展名前面添加后缀，默认值是 -repack')
-
-
-def parse_argv(argv):
-    return ap.parse_args(argv)
+PARSER = __import__('parser').make_parser()
 
 
 if __name__ == '__main__':
-    from sys import argv
-    if '-h' in argv or '--help' in argv:
-        parse_argv(['-h'])
+    args = PARSER.parse_args()
+    if not (args.path or args.list):
+        PARSER.parse_args(['-h'])
 
 
 import posixpath
 
+from argparse import Namespace
 from os import path
-from re import compile as re_compile
+from pkgutil import get_data
+from re import compile as re_compile, Pattern
 from typing import (
-    Callable, Collection, Dict, List, Optional, Tuple, Union
+    Callable, Collection, Dict, Final, List, 
+    Optional, Tuple, Union, 
 )
 from urllib.parse import quote, unquote
 from xml.etree.ElementTree import fromstring
 from zipfile import ZipFile, ZipInfo
 
 from util.path import relative_path, add_stem_suffix
-from generate_method import make_generator, make_bcp_generator
+from generate_method import BASE4CHARS, NAME_GENERATORS, make_generator, make_bcp_generator
 
+ENCRYPTION_XML = get_data('src', 'encryption.xml')
+METHODS_LIST = list(NAME_GENERATORS.values())
 
-PROJECT_FOLDER = path.dirname(__file__)
-SRC_FOLDER = path.join(PROJECT_FOLDER, 'src')
-
-CRE_NAME = re_compile(r'(?P<name>.*?)(?P<append>~[_0-9a-zA-Z]+)?(?P<suffix>\.[_0-9a-zA-z]+)')
-CRE_PROT = re_compile(r'\w+:/')
-CRE_LINK = re_compile(r'([^#?]+)(.*)')
-CRE_HREF = re_compile(r'(<[^/][^>]+\bhref=")(?P<link>[^>"]+)')
-CRE_SRC  = re_compile(r'(<[^/][^>]+\bsrc=")(?P<link>[^>"]+)')
-CRE_URL  = re_compile(r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
+CRE_NAME: Final[Pattern] = re_compile(r'(?P<name>.*?)(?P<append>~[_0-9a-zA-Z]+)?(?P<suffix>\.[_0-9a-zA-z]+)')
+CRE_PROT: Final[Pattern] = re_compile(r'\w+:/')
+CRE_LINK: Final[Pattern] = re_compile(r'([^#?]+)(.*)')
+CRE_HREF: Final[Pattern] = re_compile(r'(<[^/][^>]+\bhref=")(?P<link>[^>"]+)')
+CRE_SRC : Final[Pattern] = re_compile(r'(<[^/][^>]+\bsrc=")(?P<link>[^>"]+)')
+CRE_URL : Final[Pattern] = re_compile(r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
 
 
 def get_elnode_attrib(elnode) -> dict:
@@ -315,16 +257,20 @@ def rename_in_epub(
             tgt_epub.writestr(zipinfo, content)
 
         if add_encrypt_file and not has_encrypt_file:
-            tgt_epub.write(
-                path.join(SRC_FOLDER, 'encryption.xml'), 
-                'META-INF/encryption.xml'
-            )
+            tgt_epub.writestr('META-INF/encryption.xml', ENCRYPTION_XML)
 
     return epub_path2
 
 
-def main(argv: Optional[List[str]] = None):
-    args = parse_argv(argv)
+def main(
+    argv: Optional[List[str]] = None, 
+    args: Optional[Namespace] = None
+):
+    '主函数'
+    if args is None:
+        args = PARSER.parse_args(argv)
+
+    epub_list = args.path + args.list
 
     try:
         method = NAME_GENERATORS[args.method]
@@ -342,16 +288,20 @@ def main(argv: Optional[List[str]] = None):
         method = make_generator(method)
 
     def process_file(epub):
-        newfilename = rename_in_epub(
-            epub, 
-            scan_dirs=args.scan_dirs,
-            stem_suffix=args.suffix, 
-            quote_names=args.quote_names,
-            generate=method,
-            remove_encrypt_file=args.remove_encrypt_file,
-            add_encrypt_file=args.add_encrypt_file,
-        )
-        print('产生文件：', newfilename)
+        try:
+            newfilename = rename_in_epub(
+                epub, 
+                scan_dirs=args.scan_dirs,
+                stem_suffix=args.suffix, 
+                quote_names=args.quote_names,
+                generate=method,
+                remove_encrypt_file=args.remove_encrypt_file,
+                add_encrypt_file=args.add_encrypt_file,
+            )
+            print('产生文件：', newfilename)
+        finally:
+            if reset:
+                reset()
 
     print('【接收参数】\n', args, '\n')
     print('【采用方法】\n', method.__name__, '\n')
@@ -360,27 +310,24 @@ def main(argv: Optional[List[str]] = None):
     if args.glob:
         from glob import iglob
 
-        for epub_glob in args.list:
+        for epub_glob in epub_list:
             for fpath in iglob(epub_glob, recursive=args.recursive):
                 if path.isfile(fpath):
                     process_file(fpath)
-                    if reset: reset()
     else:
         from util.path import iter_scan_files
 
-        for epub in args.list:
+        for epub in epub_list:
             if not path.exists(epub):
                 print('🚨 跳过不存在的文件或文件夹：', epub)
             elif path.isdir(epub):
                 for fpath in iter_scan_files(epub, recursive=args.recursive):
                     if fpath.endswith('.epub'):
                         process_file(fpath)
-                        if reset: reset()
             else:
                 process_file(epub)
-                if reset: reset()
 
 
 if __name__ == '__main__':
-    main()
+    main(args=args)
 

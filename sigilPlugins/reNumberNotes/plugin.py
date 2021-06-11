@@ -79,8 +79,8 @@ def run(bc):
             with ctx_edit_html(bc, fid) as tree:
                 i = renumber_notes(tree, start=i, **state)
     else:
-        raise ValueError(f"unacceptable `unique_strategy`, expected value in "
-                         "('inhtml', 'inepub'), got {unique_strategy!r}")
+        raise ValueError("Unacceptable `unique_strategy`, expected value in "
+                         "('inhtml', 'inepub'), got %r" % unique_strategy)
 
     return 0
 
