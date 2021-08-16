@@ -3,7 +3,7 @@
 
 
 from argparse import ArgumentParser, RawTextHelpFormatter, Namespace
-from generate_method import BASE4CHARS, NAME_GENERATORS
+from .generate_method import BASE4CHARS, NAME_GENERATORS
 
 
 METHODS_DOC  = '\n'.join(

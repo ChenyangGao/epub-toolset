@@ -13,7 +13,7 @@ from os import fspath, listdir, scandir, walk, DirEntry, PathLike
 from typing import cast, Any, AnyStr, Generator, List, Optional, Tuple, Union
 
 
-PathType = Union[AnyStr, PathLike[AnyStr]]
+PathType = Union[AnyStr, PathLike]
 
 
 def get_fext(
@@ -118,7 +118,11 @@ def relative_path(
 
     ref_parts = ref_parts[i:]
     if advance_count:
-        dir_parts = dir_parts[:-advance_count]
+        compensation_count = advance_count - len(dir_parts)
+        if compensation_count > 0:
+            dir_parts = ['../'] * compensation_count
+        else:
+            dir_parts = dir_parts[:-advance_count]
 
     return lib.join(*dir_parts, *ref_parts)
 

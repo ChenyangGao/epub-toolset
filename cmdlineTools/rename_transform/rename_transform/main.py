@@ -2,7 +2,8 @@
 # coding: utf-8
 
 
-PARSER = __import__('parser').make_parser()
+from common.parser import make_parser
+PARSER = make_parser()
 
 
 if __name__ == '__main__':
@@ -26,7 +27,8 @@ from xml.etree.ElementTree import fromstring
 from zipfile import ZipFile, ZipInfo
 
 from util.path import relative_path, add_stem_suffix
-from generate_method import BASE4CHARS, NAME_GENERATORS, make_generator, make_bcp_generator
+from common.generate_method import NAME_GENERATORS, make_generator, make_bcp_generator
+
 
 ENCRYPTION_XML = get_data('src', 'encryption.xml')
 METHODS_LIST = list(NAME_GENERATORS.values())
@@ -37,6 +39,8 @@ CRE_LINK: Final[Pattern] = re_compile(r'([^#?]+)(.*)')
 CRE_HREF: Final[Pattern] = re_compile(r'(<[^/][^>]+\bhref=")(?P<link>[^>"]+)')
 CRE_SRC : Final[Pattern] = re_compile(r'(<[^/][^>]+\bsrc=")(?P<link>[^>"]+)')
 CRE_URL : Final[Pattern] = re_compile(r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
+CRE_EL_STYLE: Final[Pattern] = re_compile(r'<style ?[^>]*>[\s\S]+?</style>')
+CRE_INLINE_STYLE: Final[Pattern] = re_compile(r' style="[^"]+"')
 
 
 def get_elnode_attrib(elnode) -> dict:
@@ -164,7 +168,7 @@ def rename_in_epub(
         uri, suf = CRE_LINK.fullmatch(link).groups()
         full_uri = relative_path(uri, opf_href, lib=posixpath)
         if full_uri in repl_map:
-            return 'url("%s%s%s")' % (advance_str, repl_map[full_uri], suf)
+            return "url('%s%s%s')" % (advance_str, repl_map[full_uri], suf)
         else:
             return m[0]
 
@@ -179,6 +183,24 @@ def rename_in_epub(
             return m[1] + advance_str + repl_map[full_uri] + suf
         else:
             return m[0]
+
+    def sub_url_in_html(text, cre=CRE_EL_STYLE):
+        ls_repl_part = []
+        for match in cre.finditer(text):
+            repl_part, n = CRE_URL.subn(css_repl, match[0])
+            if n > 0:
+                ls_repl_part.append((match.span(), repl_part))
+        if ls_repl_part:
+            text_parts = []
+            last_stop = 0
+            for (start, stop), repl_part in ls_repl_part:
+                text_parts.append(text[last_stop:start])
+                text_parts.append(repl_part)
+                last_stop = stop
+            else:
+                text_parts.append(text[last_stop:])
+            return ''.join(text_parts)
+        return text
 
     if scan_dirs is not None:
         if '.' in scan_dirs or '' in scan_dirs:
@@ -242,11 +264,14 @@ def rename_in_epub(
             content = src_epub.read(zipinfo)
 
             if is_opf_file or mimetype in ('text/css', 'text/html', 'application/xml', 
-                                        'application/xhtml+xml', 'application/x-dtbncx+xml'):
+                                           'application/xhtml+xml', 'application/x-dtbncx+xml'):
                 text = content.decode('utf-8')
                 if is_opf_file or mimetype != 'text/css':
                     text_new = CRE_HREF.sub(hxml_repl, text)
                     text_new = CRE_SRC.sub(hxml_repl, text_new)
+                    if mimetype in ('text/html', 'application/xhtml+xml'):
+                        text_new = sub_url_in_html(text_new, CRE_EL_STYLE)
+                        text_new = sub_url_in_html(text_new, CRE_INLINE_STYLE)
                 else:
                     text_new = CRE_URL.sub(css_repl, text)
                 if text != text_new:

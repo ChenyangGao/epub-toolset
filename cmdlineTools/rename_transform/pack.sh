@@ -2,7 +2,7 @@
 PROJDIR=`dirname "$0"`
 CURDIR=`pwd`
 
-if [ -f $PROJDIR/VERSION ];
+if [ -f $PROJDIR/VERSION ]
 then
     VERSION=`cat $PROJDIR/VERSION`
 else

@@ -2,12 +2,12 @@
 # coding: utf-8
 
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 4, 2)
+__version__ = (0, 4, 3)
 
 
 from argparse import ArgumentParser, RawTextHelpFormatter
 
-from parser import make_parser
+from common.parser import make_parser
 
 
 PARSER = ArgumentParser(
@@ -15,8 +15,8 @@ PARSER = ArgumentParser(
     formatter_class=RawTextHelpFormatter,
 )
 PARSER.add_argument('-c', '--confuse', action='store_true', 
-                help='如果不指定这个参数，那么对文件名去除混淆；'
-                     '如果指定这个参数，那么对文件名进行混淆')
+                    help='如果不指定这个参数，那么对文件名去除混淆；'
+                         '如果指定这个参数，那么对文件名进行混淆')
 PARSER.add_argument('-l', '--epub-list', dest="list", nargs='*', default=[], 
                     help='待处理的 ePub 文件（有多个用空格隔开）')
 PARSER.add_argument('path', nargs='*', default=[], 
