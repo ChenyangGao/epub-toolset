@@ -82,7 +82,8 @@ def get_sep_enum_id():
     cache: Dict[str, int] = {}
     def _(attrib) -> int:
         '为每个文件夹中的文件，分别提供递增计数，从 1 开始递增'
-        components = split_components(attrib['href'])
+        href: str = attrib['href']
+        components = split_components(href, lib=posixpath)
         dir_ = cast(str, components[0] if len(components) > 1 else '')
         if dir_ in cache:
             cache[dir_] += 1

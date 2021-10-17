@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 4, 3)
+__version__ = (0, 4, 4)
 
 
 from argparse import ArgumentParser, RawTextHelpFormatter

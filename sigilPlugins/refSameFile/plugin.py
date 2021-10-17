@@ -5,15 +5,15 @@ __revision__ = 0
 import posixpath
 
 from contextlib import ExitStack
+from copy import copy
 from html import unescape
-from itertools import takewhile
-from os import path
-from re import compile as re_compile
 from urllib.parse import urldefrag, unquote
 
-from utils.relationship import is_first_child, is_first_only_descendant
-from utils.dialog import message_dialog
-from utils.edithtml import ctx_edit_html
+from util.relationship import is_first_child, is_first_only_descendant
+from util.dialog import message_dialog
+from util.edit import ctx_edit_html
+from util.path import startswith_protocol
+from util.iter_detailed_refer import get_reverse_refer
 
 
 # TODO: 以后会支持移动任何元素，而不仅仅只能移动 脚注
@@ -22,9 +22,10 @@ from utils.edithtml import ctx_edit_html
 # TODO: 对脚注的识别，提供 人工写选择器 和 自动判断（现在的方式） 的选项，勾选 人工写选择器 的复选框，
 #       GUI 界面会多出一个输入框，用于输入选择器
 # TODO: 首先应该查找有 href 的 a 元素，它未必有 id 属性
-# TODO: [ ] 允许单向引用 [ ] 包括在同一页 🔘 罗列引用关系(导出为csv)
+# TODO: [x] 限定双向引用 [x] 移动包括在同一页 🔘 罗列引用关系(导出为csv)
 # TODO: 增加一些断言 [] 脚注为 a 元素 [] 脚注的 id 和 href 在同一元素 [] 引用的 id 和 href 在同一元素
 # TODO: 单选，到底是移动时复制还是移动后删除
+# TODO: footnote 和 noteref 分别支持自行编写 xpath 或 css，不勾选复选框（默认），lineedit 是灰色
 # TODO: 移动后还是保留原来但id（可能导致冲突），还是需要重新编号id（一些 默认策略 以及 自写函数）
 # TODO: 移动策略 页面配置：
 #       [ ] 包括在同一文件 
@@ -42,88 +43,20 @@ from utils.edithtml import ctx_edit_html
 #           ④ rearnote 相互引用：引用 的 href 引用 脚注 的 id，脚注 的 href 引用 引用 的 id
 
 
-def _clean_space(s):
-    return unescape(s).strip().replace('&nbsp;', '')
+def _strip_space(s):
+    return unescape(s).strip()
 
 
-def _startswith_protocal(s, _cre=re_compile('[_a-zA-Z0-9]+://')):
-    return _cre.match(s) is not None
+def _clean_space(s, _cre=__import__('re').compile('\s')):
+    return _cre.sub('', unescape(s))
 
 
-def relative_path(
-    ref_path, 
-    rel_path = '.', 
-    lib = path, 
-):
-    'Relative to the directory of `rel_path`, return the path of `file_path`.'
-    if isinstance(ref_path, bytes):
-        sep = lib.sep.encode()
-        curdir = lib.curdir.encode()
-        if isinstance(rel_path, str):
-            rel_path = rel_path.encode()
-    else:
-        sep = lib.sep
-        curdir = lib.curdir
-        if isinstance(rel_path, bytes):
-            rel_path = rel_path.decode()
-
-    if not rel_path or rel_path == curdir or lib.isabs(ref_path):
-        return ref_path
-
-    if rel_path.endswith(sep):
-        dir_path = rel_path[:-1]
-    else:
-        dir_path = lib.dirname(rel_path)
-
-    if not ref_path.startswith(curdir):
-        return lib.join(dir_path, ref_path)
-
-    dir_parts = dir_path.split(sep)
-    if not dir_parts[0]:
-        dir_parts[0] = sep
-
-    ref_parts = ref_path.split(sep)
-    advance_count = 0
-    for i, p in enumerate(ref_parts):
-        if p and not p.strip(curdir):
-            advance_count += len(p) - 1
-            continue
-        break
-    else:
-        i += 1
-
-    ref_parts = ref_parts[i:]
-    if advance_count:
-        compensation_count = advance_count - len(dir_parts)
-        if compensation_count > 0:
-            dir_parts = ['../'] * compensation_count
-        else:
-            dir_parts = dir_parts[:-advance_count]
-    return lib.join(*dir_parts, *ref_parts)
 
 
-def get_xpath(el):
-    ls = []
-    for parent in el.iterancestors():
-        tag = el.tag
-        idx = sum(e.tag == tag for e in takewhile(lambda e: e is not el, parent))
-        ls.append('%s[%d]' % (el.tag, idx + 1))
-        el = parent
-    else:
-        ls.append(el.tag)
-    ls.reverse()
-    return '/' + '/'.join(ls)
-
-def get_path(el):
-    ls = []
-    for parent in el.iterancestors():
-        ls.append(parent.index(el))
-        el = parent
-    ls.reverse()
-    return tuple(ls)
+# def is_footnote
 
 
-def predicate_noteref(noteref) -> bool:
+def is_noteref(noteref) -> bool:
     # 假设：因为在 引用 前面有对应的被注释的文本，所以在这个文本后面直接相邻的元素才是某个 引用 的整体
     parent_el = noteref.getparent()
     while (
@@ -176,6 +109,11 @@ def get_full_footnote_el(predicated_footnote_el):
     return footnote
 
 
+# TODO: 允许自行指定 xpath，cssselector 或者 python 函数来搜索元素
+# TODO: 相互引用时，脚注的 href 和 id 不在同一个元素上，分几种情况来识别整体：
+#       1. href 是 id 的后代，暂取 id
+#       2. id 是 href 的后代，暂取 href
+#       3. 否则，取 id 和 href 最近的公共上级，但如果这个公共上级也是其他 href-id 组公共上级，则通过实际情况进行分析到底要怎么取，我觉得最好还是根据在同一个文件中的那些注释所在，分析一下他们的构造，找出类似的结构（假设：脚注的结构都是近似的）
 def run(bc):
     '''
     Rationale 理论
@@ -208,38 +146,41 @@ def run(bc):
             for fid, path in bc.text_iter()
         }
 
-        for noteref_href, etree_noteref in path_item_map.items():
+        for book_href, etree_noteref in path_item_map.items():
             # 只搜索 body 元素以下的节点
             body = etree_noteref.body
             if body is None:
                 continue
 
             pending_to_move = []
-            for noteref in body.xpath('descendant::*[local-name(.) = "a" and @href]'):
-                # 观点：作为 引用 的部分，里面有且只能有 1 个 href，不然的话，它会锚向多个地方，这是不合适的
-                # 观点：引用 应该是比较简单的，它只不过是<a>元素锚向了脚注，只有单纯的文本，或者一个子元素为图形(<canvas>)或图像(<img>)元素
-                # 观点: 在 引用 前，应该有一些文本，也就是说，它前面要么有文本，要么它不是它的父元素的第一个子元素
-                # 假设：如果某个 引用 的 id 和 href 可能分别位于不同的元素节点中，必须保证包含 id 的元素节点
-                #      **不位于**包含 href 的元素节点之外或者之后，如果互为兄弟节点则这两者是紧邻的
-                #      （中间没有穿插其它元素节点）
+            for noteref in body.findall('.//*[@href]'):
+                # NOTE: 观点：作为 引用 的部分，里面有且只能有 1 个 href，不然的话，它会锚向多个地方，这是不合适的
+                # NOTE: 观点：引用 应该是比较简单的，它只不过是<a>元素锚向了脚注，只有单纯的文本，
+                #             或者一个子元素为图形(<canvas>)或图像(<img>)元素
+                # NOTE: 观点：在 引用 前，应该有一些文本，也就是说，它前面要么有文本，
+                #             要么它不是它的父元素的第一个子元素
+                # NOTE: 假设：如果某个 引用 的 id 和 href 可能分别位于不同的元素节点中，必须保证包含 id 的元素节点
+                #             **不位于**包含 href 的元素节点之外或者之后，如果互为兄弟节点则这两者是紧邻的
+                #            （中间没有穿插其它元素节点）
 
-                href = unquote(noteref.attrib['href'])
-
-                # 如果 href 是一个 url 链接，则跳过（换言之，它必须是某个本地文件）
-                if _startswith_protocal(href):
+                if noteref.tag != 'a':
                     continue
 
-                footnote_href, footnote_id = urldefrag(href)
+                href = unquote(noteref.attrib['href'])
+                # 如果 href 带有协议头，说明是 uri，非本地文件，要跳过
+                if startswith_protocol(href):
+                    continue
 
-                if footnote_href == '':
-                    footnote_href = noteref_href
+                footnote_link, footnote_id = urldefrag(href)
+                if footnote_link == '':
+                    footnote_link = book_href
                 else:
-                    footnote_href = relative_path(footnote_href, noteref_href, posixpath)
+                    footnote_link = relative_path(footnote_link, book_href, posixpath)
 
                 # 如果没有这个文件，则跳过（并会打印一个文件缺失）
-                if footnote_href not in path_item_map:
-                    print('WARN::', 'invalid href:', noteref_href, 
-                          'at file:', noteref_href)
+                if footnote_link not in path_item_map:
+                    print('WARN::', ' unavailable href:', href, 
+                          'in file:', book_href)
                     continue
 
                 # 如果没有指向某个页面的一个 id 元素，则跳过
@@ -252,44 +193,38 @@ def run(bc):
                     continue
 
                 # 如果不是 noteref，则跳过
-                if not predicate_noteref(noteref):
+                if not is_noteref(noteref):
                     continue
 
-                tree_where_footnote_is = path_item_map[footnote_href]
+                tree_where_footnote_is = path_item_map[footnote_link]
                 footnote = tree_where_footnote_is.find('.//*[@id="%s"]' % footnote_id)
 
                 # 如果相应文件中没有这个 id 对应的元素，则跳过
                 if footnote is None:
+                    print('WARN::', ' unavailable id:', footnote_id, 
+                          'in file:', footnote_link)
                     continue
 
+                # TODO: 收集所有的引用关系，然后分析共同的结构特征，相邻位置，共同上级，等，以便正确地获取 full_footnote
+                # TODO: 有些是很规范的，按照 epub3 来组织，这个可以直接分析得到这种情况，直接做出正确决定
 
                 # 假设: 注释是任意元素 x，它内部有一个<a>元素，它也引用了引用它的元素
                 # TODO: 判断两者是否具有相互引用关系
-                for href in footnote.xpath(
-                    'descendant-or-self::*[local-name(.) = "a" and @href]/@href'
-                ):
-                    if noteref_id == urldefrag(href)[1]:
-                        break
-                else:
-                    for href in footnote.xpath(
-                        '../descendant-or-self::*[local-name(.) = "a" and @href]/@href'
-                    ):
-                        if noteref_id == urldefrag(href)[1]:
-                            footnote = footnote.getparent()
-                            break
-                    else:
-                        continue
+                noteref_id, footnote_href = get_reverse_refer(noteref, book_href, footnote, footnote_link)
 
+                print(noteref, noteref_id, footnote, footnote_id)
 
-                footnote = get_full_footnote_el(footnote)
+                #footnote = get_full_footnote_el(footnote)
 
                 # 或者更具体的：
                 # noteref.attrib['href'] = noteref_href + '#' + footnote_id
-                noteref.attrib['href'] = '#' + footnote_id
+                #noteref.attrib['href'] = '#' + footnote_id
 
-                pending_to_move.append(footnote)
+                #pending_to_move.append(footnote)
 
-            body.extend(pending_to_move)
+            #body.extend(pending_to_move)
 
         return 0
+
+
 

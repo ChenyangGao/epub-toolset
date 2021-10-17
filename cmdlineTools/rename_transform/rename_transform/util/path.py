@@ -3,56 +3,117 @@
 
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
 __version__ = (0, 0, 2)
-__all__ = ['get_fext', 'get_stem', 'split_components', 'split3', 'relative_path', 
-           'replace_stem', 'add_stem_preffix', 'add_stem_suffix', 'iter_list_files', 
-           'iter_scan_files', 'iter_walk_files']
+__all__ = [
+    'split', 'rsplit', 'split3', 'get_fext', 'get_stem', 'split_components', 
+    'relative_path', 'replace_stem', 'add_stem_preffix', 'add_stem_suffix', 
+    'iter_list_files', 'iter_scan_files', 'iter_walk_files', 
+]
 
 
 from os import path
 from os import fspath, listdir, scandir, walk, DirEntry, PathLike
-from typing import cast, Any, AnyStr, Generator, List, Optional, Tuple, Union
+from typing import (
+    overload, Any, Generator, List, Optional, Tuple, Union
+)
 
 
-PathType = Union[AnyStr, PathLike]
+@overload
+def split(
+    s: bytes, 
+    sep: Optional[bytes], 
+    maxsplit: int, 
+    start: Optional[int], 
+    stop: Optional[int], 
+) -> List[bytes]:
+    ...
+@overload
+def split(
+    s: str, 
+    sep: Optional[str], 
+    maxsplit: int, 
+    start: Optional[int], 
+    stop: Optional[int], 
+) -> List[str]:
+    ...
+def split(
+    s, 
+    sep=None, 
+    maxsplit=-1, 
+    start=0, 
+    stop=None, 
+):
+    if start in (0, None) and stop is None:
+        return s.split(sep, maxsplit)
 
-
-def get_fext(
-    fpath: PathType, 
-    lib: Any = path, 
-) -> AnyStr:
-    'Return the file extension of the `fpath`, if any.'
-    return lib.splitext(fpath)[1]
-
-
-def get_stem(
-    fpath: PathType, 
-    lib: Any = path, 
-) -> AnyStr:
-    '''Return the stem component of the `fpath`.
-    Note: stem is the final path component, without its suffix (file extension).
-    '''
-    return lib.dirname(lib.splitext(fpath)[0])
-
-
-def split_components(
-    fpath: PathType, 
-    sep: Union[bytes, str] = '/', 
-) -> Union[List[bytes], List[str]]:
-    fpath = cast(Union[bytes, str], fspath(fpath))
-    if isinstance(fpath, bytes):
-        if isinstance(sep, str):
-            sep = sep.encode()
-        return fpath.split(cast(bytes, sep))
+    if start in (0, None):
+        prefix = ''
+        remain, suffix = s[:stop], s[stop:]
+    elif stop is None:
+        prefix, remain = s[:start], s[start:]
+        suffix = ''
     else:
-        if isinstance(sep, bytes):
-            sep = sep.decode()
-        return fpath.split(cast(str, sep))
+        prefix, remain, suffix = s[:start], s[start:stop], s[stop:]
+
+    parts = remain.split(sep, maxsplit)
+    if prefix:
+        parts[0] = prefix + parts[0]
+    if suffix:
+        parts[-1] = parts[-1] + suffix
+    return parts
 
 
-def split3(
-    fpath: PathType, 
-    lib: Any = path, 
-) -> Union[Tuple[bytes, bytes, bytes], Tuple[str, str, str]]:
+@overload
+def rsplit(
+    s: bytes, 
+    sep: Optional[bytes], 
+    maxsplit: int, 
+    start: Optional[int], 
+    stop: Optional[int], 
+) -> List[bytes]:
+    ...
+@overload
+def rsplit(
+    s: str, 
+    sep: Optional[str], 
+    maxsplit: int, 
+    start: Optional[int], 
+    stop: Optional[int], 
+) -> List[str]:
+    ...
+def rsplit(
+    s, 
+    sep=None, 
+    maxsplit=-1, 
+    start=0, 
+    stop=None, 
+):
+    if start in (0, None) and stop is None:
+        return s.rsplit(sep, maxsplit)
+
+    if start in (0, None):
+        prefix = ''
+        remain, suffix = s[:stop], s[stop:]
+    elif stop is None:
+        prefix, remain = s[:start], s[start:]
+        suffix = ''
+    else:
+        prefix, remain, suffix = s[:start], s[start:stop], s[stop:]
+
+    parts = remain.rsplit(sep, maxsplit)
+    if prefix:
+        parts[0] = prefix + parts[0]
+    if suffix:
+        parts[-1] = parts[-1] + suffix
+    return parts
+
+
+@overload
+def split3(fpath: bytes, lib: Any = ...) -> Tuple[bytes, bytes, bytes]:
+    ...
+@overload
+def split3(fpath: str, lib: Any = ...) -> Tuple[str, str, str]:
+    ...
+def split3(fpath, lib=path):
     '''Split the path `fpath` into a tuple (dirpath, barename, extension).
     Where
         dirpath: Everything leading up to the last pathname component (basename).
@@ -65,73 +126,94 @@ def split3(
     return dirpath, barename, extension
 
 
-def relative_path(
-    ref_path: PathType, 
-    rel_path: PathType = '.', 
-    lib: Any = path, 
-) -> AnyStr:
+@overload
+def get_fext(fpath: bytes, lib: Any = ...) -> bytes:
+    ...
+@overload
+def get_fext(fpath: str, lib: Any = ...) -> str:
+    ...
+def get_fext(fpath, lib=path):
+    'Return the file extension of the `fpath`, if any.'
+    return lib.splitext(fpath)[1]
+
+
+@overload
+def get_stem(fpath: bytes, lib: Any = ...) -> bytes:
+    ...
+@overload
+def get_stem(fpath: str, lib: Any = ...) -> str:
+    ...
+def get_stem(fpath, lib=path):
+    '''Return the stem component of the `fpath`.
+    Note: stem is the final path component, without its suffix (file extension).
+    '''
+    return lib.dirname(lib.splitext(fpath)[0])
+
+
+@overload
+def split_components(fpath: bytes, lib: Any = ...) -> List[bytes]:
+    ...
+@overload
+def split_components(fpath: str, lib: Any = ...) -> List[str]:
+    ...
+def split_components(fpath, lib=path):
+    sep = lib.sep
+    if isinstance(fpath, bytes):
+        sep = sep.encode()
+    return split(fpath, sep)
+
+
+@overload
+def relative_path(ref_path: bytes, rel_path: bytes, lib: Any = ...) -> bytes:
+    ...
+@overload
+def relative_path(ref_path: str, rel_path: str, lib: Any = ...) -> str:
+    ...
+def relative_path(ref_path, rel_path, lib=path):
     'Relative to the directory of `rel_path`, return the path of `file_path`.'
-    sep: AnyStr
-    curdir: AnyStr
-    ref_path = cast(AnyStr, fspath(ref_path))
-    rel_path = cast(AnyStr, fspath(rel_path))
+    curdir, pardir, sep = lib.curdir, lib.pardir, lib.sep
 
     if isinstance(ref_path, bytes):
-        sep = cast(bytes, lib.sep.encode())
-        curdir = cast(bytes, lib.curdir.encode())
-        ref_path = cast(bytes, ref_path)
-        if isinstance(rel_path, str):
-            rel_path = rel_path.encode()
-        rel_path = cast(bytes, rel_path)
-    else:
-        sep = cast(str, lib.sep)
-        curdir = cast(str, lib.curdir)
-        ref_path = cast(str, ref_path)
-        if isinstance(rel_path, bytes):
-            rel_path = rel_path.decode()
-        rel_path = cast(str, rel_path)
+        curdir, pardir, sep = curdir.encode(), pardir.encode(), sep.encode()
 
-    if not rel_path or rel_path == curdir or lib.isabs(ref_path):
+    if not ref_path:
+        return rel_path
+
+    dir_path = lib.dirname(rel_path)
+    if not dir_path or dir_path == curdir or lib.isabs(ref_path):
         return ref_path
 
-    if rel_path.endswith(sep):
-        dir_path = rel_path[:-1]
-    else:
-        dir_path = lib.dirname(rel_path)
-
-    if not ref_path.startswith(curdir):
-        return lib.join(dir_path, ref_path)
-
-    dir_parts = dir_path.split(sep)
-    if not dir_parts[0]:
-        dir_parts[0] = sep
-
+    drive, dir_path = lib.splitdrive(dir_path)
+    dir_path_isabs = bool(drive or dir_path.startswith(sep))
+    dir_parts = split(dir_path, sep, start=1)
     ref_parts = ref_path.split(sep)
-    advance_count = 0
-    for i, p in enumerate(ref_parts):
-        if p and not p.strip(curdir):
-            advance_count += len(p) - 1
-            continue
-        break
-    else:
-        i += 1
+    try:
+        for i, p in enumerate(ref_parts):
+            if p == curdir:
+                continue
+            elif p == pardir and dir_parts[-1] != pardir:
+                if dir_parts.pop() == sep:
+                    raise IndexError
+            else:
+                dir_parts.append(p)
+        result_path = lib.join(drive, *dir_parts)
+        if dir_path_isabs and not result_path.startswith(sep):
+            return sep + result_path
+        return result_path
+    except IndexError:
+        if dir_path_isabs:
+            raise ValueError(
+                f'{ref_path} relative to {rel_path} exceeded the root directory')
+        return lib.join(*ref_parts[i:])
 
-    ref_parts = ref_parts[i:]
-    if advance_count:
-        compensation_count = advance_count - len(dir_parts)
-        if compensation_count > 0:
-            dir_parts = ['../'] * compensation_count
-        else:
-            dir_parts = dir_parts[:-advance_count]
 
-    return lib.join(*dir_parts, *ref_parts)
-
-
-def replace_stem(
-    fpath: PathType, 
-    stem: AnyStr, 
-    lib: Any = path, 
-) -> AnyStr:
+@overload
+def replace_stem(fpath: bytes, stem: bytes, lib: Any = ...) -> bytes:
+    ...
+@overload
+def replace_stem(fpath: str, stem: str, lib: Any = ...) -> str:
+    ...
+def replace_stem(fpath, stem, lib=path):
     '''Replace the stem component of the path `fpath` with the replacement `rep`.
     Note: stem is the final path component, without its suffix (file extension).
 
@@ -147,11 +229,13 @@ def replace_stem(
     return lib.join(p_dir, stem + p_ext)
 
 
-def add_stem_preffix(
-    fpath: PathType, 
-    preffix: AnyStr, 
-    lib: Any = path, 
-) -> AnyStr:
+@overload
+def add_stem_preffix(fpath: bytes, preffix: bytes, lib: Any = ...) -> bytes:
+    ...
+@overload
+def add_stem_preffix(fpath: str, preffix: str, lib: Any = ...) -> str:
+    ...
+def add_stem_preffix(fpath, preffix, lib=path):
     '''Append a string `preffix` at the start of the stem component of the path `fpath`.
     Note: stem is the final path component, without its suffix (file extension).
 
@@ -166,11 +250,13 @@ def add_stem_preffix(
     return lib.join(base, preffix + name)
 
 
-def add_stem_suffix(
-    fpath: PathType, 
-    suffix: AnyStr, 
-    lib: Any = path, 
-) -> AnyStr:
+@overload
+def add_stem_suffix(fpath: bytes, preffix: bytes, lib: Any = ...) -> bytes:
+    ...
+@overload
+def add_stem_suffix(fpath: str, preffix: str, lib: Any = ...) -> str:
+    ...
+def add_stem_suffix(fpath, suffix, lib=path):
     '''Append a string `suffix` at the end of the stem component of the path `fpath`.
     Note: stem is the final path component, without its suffix (file extension).
 
@@ -185,13 +271,28 @@ def add_stem_suffix(
     return base + suffix + ext
 
 
+@overload
 def iter_list_files(
-    top: PathType = '.', 
-    use_fullname: bool = True, 
-    recursive: bool = True, 
-    lib: Any = path, 
-) -> Union[Generator[bytes, None, None], 
-           Generator[str, None, None]]:
+    top: bytes, 
+    use_fullname: bool = ..., 
+    recursive: bool = ..., 
+    lib: Any = ..., 
+) -> Generator[bytes, None, None]:
+    ...
+@overload
+def iter_list_files(
+    top: str, 
+    use_fullname: bool = ..., 
+    recursive: bool = ..., 
+    lib: Any = ..., 
+) -> Generator[str, None, None]:
+    ...
+def iter_list_files(
+    top='.', 
+    use_fullname=True, 
+    recursive=True, 
+    lib=path, 
+):
     '''Based on `os.listdir`, traversing the top directory (or even its subdirectories), 
     returning an iterator of files (not directories) in these directories.
 
@@ -216,15 +317,31 @@ def iter_list_files(
             yield pathname if use_fullname else name
 
 
+@overload
 def iter_scan_files(
-    top: PathType = '.', 
-    use_fullname: bool = True, 
-    recursive: bool = True, 
-    as_entry: bool = False, 
-    lib: Any = path, 
-) -> Union[Generator[DirEntry, None, None], 
-           Generator[bytes, None, None], 
-           Generator[str, None, None]]:
+    top: bytes, 
+    use_fullname: bool = ..., 
+    recursive: bool = ..., 
+    as_entry: bool = ..., 
+    lib: Any = ..., 
+) -> Union[Generator[DirEntry, None, None], Generator[bytes, None, None]]:
+    ...
+@overload
+def iter_scan_files(
+    top: str, 
+    use_fullname: bool = ..., 
+    recursive: bool = ..., 
+    as_entry: bool = ..., 
+    lib: Any = ..., 
+) -> Union[Generator[DirEntry, None, None], Generator[str, None, None]]:
+    ...
+def iter_scan_files(
+    top='.', 
+    use_fullname=True, 
+    recursive=True, 
+    as_entry=False, 
+    lib=path, 
+):
     '''Based on `os.scandir`, traversing the top directory (or even its subdirectories), 
     returning an iterator of files (not directories) in these directories.
 
@@ -256,13 +373,28 @@ def iter_scan_files(
                 yield entry.name
 
 
+@overload
 def iter_walk_files(
-    top: PathType = '.', 
-    use_fullname: bool = True, 
-    recursive: bool = True, 
-    lib: Any = path, 
-) -> Union[Generator[bytes, None, None], 
-           Generator[str, None, None]]:
+    top: bytes, 
+    use_fullname: bool = ..., 
+    recursive: bool = ..., 
+    lib: Any = ..., 
+) -> Generator[bytes, None, None]:
+    ...
+@overload
+def iter_walk_files(
+    top: str, 
+    use_fullname: bool = ..., 
+    recursive: bool = ..., 
+    lib: Any = ..., 
+) -> Generator[str, None, None]:
+    ...
+def iter_walk_files(
+    top='.', 
+    use_fullname=True, 
+    recursive=True, 
+    lib=path, 
+):
     '''Based on `os.walk`, traversing the top directory (or even its subdirectories), 
     returning an iterator of files (not directories) in these directories.
 

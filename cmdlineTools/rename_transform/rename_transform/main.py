@@ -17,67 +17,76 @@ import posixpath
 from argparse import Namespace
 from os import path
 from pkgutil import get_data
-from re import compile as re_compile, Pattern
+from re import compile as re_compile, Match, Pattern
 from typing import (
-    Callable, Collection, Dict, Final, List, 
+    cast, Callable, Collection, Dict, Final, List, 
     Optional, Tuple, Union, 
 )
-from urllib.parse import quote, unquote
-from xml.etree.ElementTree import fromstring
+from urllib.parse import quote, unquote, urlparse, urlunparse
+from xml.etree.ElementTree import fromstring, Element
 from zipfile import ZipFile, ZipInfo
 
 from util.path import relative_path, add_stem_suffix
 from common.generate_method import NAME_GENERATORS, make_generator, make_bcp_generator
 
 
-ENCRYPTION_XML = get_data('src', 'encryption.xml')
+ENCRYPTION_XML = cast(bytes, get_data('src', 'encryption.xml'))
 METHODS_LIST = list(NAME_GENERATORS.values())
 
-CRE_NAME: Final[Pattern] = re_compile(r'(?P<name>.*?)(?P<append>~[_0-9a-zA-Z]+)?(?P<suffix>\.[_0-9a-zA-z]+)')
-CRE_PROT: Final[Pattern] = re_compile(r'\w+:/')
-CRE_LINK: Final[Pattern] = re_compile(r'([^#?]+)(.*)')
-CRE_HREF: Final[Pattern] = re_compile(r'(<[^/][^>]+\bhref=")(?P<link>[^>"]+)')
-CRE_SRC : Final[Pattern] = re_compile(r'(<[^/][^>]+\bsrc=")(?P<link>[^>"]+)')
-CRE_URL : Final[Pattern] = re_compile(r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
-CRE_EL_STYLE: Final[Pattern] = re_compile(r'<style ?[^>]*>[\s\S]+?</style>')
-CRE_INLINE_STYLE: Final[Pattern] = re_compile(r' style="[^"]+"')
+CRE_ITEM_IN_OPF: Final[Pattern] = re_compile('<item\s[^>]+?/>')
+CRE_NAME: Final[Pattern] = re_compile(
+    r'(?P<name>.*?)(?P<append>~[_0-9a-zA-Z]+)?(?P<suffix>\.[_0-9a-zA-z]+)')
+CRE_PROT: Final[Pattern] = re_compile(r'^\w+://')
+CRE_REF: Final[Pattern] = re_compile(
+    r'(<[^/][^>]*?[\s:](?:href|src)=")(?P<link>[^>"]+)')
+CRE_URL: Final[Pattern] = re_compile(
+    r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|'
+    r'\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
+CRE_EL_STYLE: Final[Pattern] = re_compile(
+    r'<style(?:\s[^>]*|)>((?s:.+?))</style>')
+CRE_INLINE_STYLE: Final[Pattern] = re_compile(
+    r'<[^/][^>]*?\sstyle="([^"]+)"')
 
 
-def get_elnode_attrib(elnode) -> dict:
-    '获取一个 xml / xhtml 标签的属性值'
-    if isinstance(elnode, (bytes, str)):
+def get_elnode_attrib(elnode: Union[bytes, str, Element], /) -> dict:
+    '获取一个 xml/xhtml 标签的属性值'
+    if not isinstance(elnode, Element):
         elnode = fromstring(elnode)
     return elnode.attrib
 
 
-def get_opf_path(
-    src_epub: ZipFile, _cre=re_compile('full-path="([^"]+)')
-) -> str:
-    '''获取 ePub 文件中的 OPF 文件的路径
-    该路径可能位于 META-INF/container.xml 文件的这个 xpath 路径下
-        /container/rootfiles/rootfile/@full-path
-    所以我尝试直接根据元素的 full-path 属性来判断，但这可能不是普遍适用的
-    '''
-    content = unquote(
-        src_epub.read('META-INF/container.xml').decode())
-    match = _cre.search(content)
-    if match is None:
-        raise Exception('OPF file path not found')
-    return match[1]
+def get_opf_path(epub_zipfile: ZipFile, /) -> str:
+    '获取 ePub 文件中的 OPF 文件的路径'
+    content = epub_zipfile.read('META-INF/container.xml').decode()
+    etree = fromstring(content)
+    for el in etree.iter():
+        if (
+            (el.tag == 'rootfile' or el.tag.endswith('}rootfile')) 
+            and el.attrib.get('media-type') == 'application/oebps-package+xml'
+        ):
+            return unquote(el.attrib['full-path'])
+    raise Exception('OPF file path not found.')
 
 
 def get_opf_itemmap(
-    src_epub: ZipFile, 
-    opf_path: Union[str, ZipInfo, None] = None,
-    _cre=re_compile('<item .*?/>'),
+    epub_zipfile: ZipFile, 
+    opf_path: Union[str, ZipInfo, None] = None, 
 ) -> dict:
-    '读取 OPF 文件的所有 item 标签，返回 href: item 标签属性的字典'
+    '读取 OPF 文件的所有 item 标签，返回 href:item 标签属性的字典'
     if opf_path is None:
-        opf_path = get_opf_path(src_epub)
-    opf = unquote(src_epub.read(opf_path).decode())
+        opf_path = get_opf_path(epub_zipfile)
+    if isinstance(opf_path, str):
+        opf_dir = posixpath.dirname(opf_path)
+    else:
+        opf_dir = posixpath.dirname(opf_path.filename)
+    if opf_dir:
+        opf_dir += '/'
+    opf = epub_zipfile.read(opf_path).decode()
     return {
-        attrib['href']: attrib
-        for attrib in map(get_elnode_attrib, _cre.findall(opf))
+        relative_path(
+            unquote(cast(str, attrib['href'])), opf_dir, lib=posixpath
+        ): attrib
+        for attrib in map(get_elnode_attrib, CRE_ITEM_IN_OPF.findall(opf))
         if attrib.get('href')
     }
 
@@ -87,13 +96,13 @@ def make_repl_map(
     generate: Callable[..., str], 
     scan_dirs: Optional[Tuple[str, ...]] = None, 
     quote_names: bool = False, 
-) -> Tuple[dict, list]:
+) -> Dict[str, str]:
     '基于 OPF 文件的 href 替换映射，键是原来的 href，值是修改后的 href'
     repl_map: Dict[str, str] = {}
-    key_map:  Dict[str, str] = {}
+    key_map:  Dict[Tuple[str, str, str], str] = {}
 
     for href, attrib in itemmap.items():
-        if href == 'toc.ncx':
+        if attrib['media-type'] == 'application/x-dtbncx+xml':
             continue
         if scan_dirs is not None:
             if not href.startswith(scan_dirs):
@@ -102,7 +111,8 @@ def make_repl_map(
         href_dir = posixpath.dirname(href)
         parts = href.split('/')
         name = parts[-1]
-        name_dict = CRE_NAME.fullmatch(name).groupdict()
+        match = cast(Match, CRE_NAME.fullmatch(name))
+        name_dict = match.groupdict()
         key = (href_dir, name_dict['name'], name_dict['suffix'])
 
         # 据说在多看阅读，封面图片可以有 2 个版本，形如 cover.jpg 和 cover~slim.jpg，
@@ -116,13 +126,16 @@ def make_repl_map(
         else:
             generate_name = key_map[key] = generate(attrib)
 
-        suffix = name_dict['suffix']
-        if generate_name.endswith(name_dict['suffix']):
-            suffix = ''
+        append = name_dict['append']
+        if append:
+            stem, suffix = posixpath.splitext(generate_name)
+            newname = '%s%s%s' % (stem, append, suffix)
+        else:
+            newname = generate_name
 
-        newname = '%s%s%s' % (generate_name, name_dict['append'] or '', suffix)
-        if len(parts) > 1:
-            newname = posixpath.join(parts[0], newname)
+        # 最多 2 级文件夹，超过则直接移动文件到 2 级文件夹内
+        if len(parts) > 2:
+            newname = posixpath.join(*parts[:2], newname)
         if quote_names:
             newname = quote(newname)
         repl_map[href] = newname
@@ -144,50 +157,49 @@ def rename_in_epub(
     has_encrypt_file: bool = False
     is_empty_scan_dirs = scan_dirs == []
 
-    def normalize_dirname(dir_: str, _cre=re_compile(r'^\.+/')) -> str:
-        if dir_.startswith('.'):
-            dir_ = _cre.sub('', dir_, 1)
-        if not dir_.endswith('/'):
-            dir_ += '/'
-        return dir_
+    def normalize_dirname(dir_: str) -> str:
+        if dir_.endswith('/'):
+            return dir_
+        return dir_ + '/'
 
-    def css_repl(m):
-        md = m.groupdict()
-        if md['dlink']:
-            link = unquote(md['dlink'])
-        elif md['slink']:
-            link = unquote(md['slink'])
-        elif md['link']:
-            link = unquote(md['link'])
+    def rel_ref(src, ref):
+        # NOTE: ca means common ancestors
+        ca = posixpath.commonprefix((src, ref)).count('/')
+        return '../' * (src.count('/') - ca) + '/'.join(ref.split('/')[ca:])
+
+    def url_repl(m):
+        try:
+            link = next(filter(None, m.groups()))
+        except StopIteration:
+            return m[0]
+        urlparts = urlparse(link)
+        link = unquote(urlparts.path)
+        if link in ('', '.') or CRE_PROT.match(link) is not None:
+            return m[0]
+        full_link = relative_path(link, srcpath, lib=posixpath)
+        if full_link in repl_map:
+            dest_href = rel_ref(srcpath, repl_map[full_link])
+            return 'url("%s")' % urlunparse(urlparts._replace(path=dest_href))
         else:
             return m[0]
 
-        if link.startswith(('#', '/')) or CRE_PROT.match(link) is not None:
+    def ref_repl(m):
+        link = m['link']
+        urlparts = urlparse(link)
+        link = unquote(urlparts.path)
+        if link in ('', '.') or CRE_PROT.match(link) is not None:
             return m[0]
-
-        uri, suf = CRE_LINK.fullmatch(link).groups()
-        full_uri = relative_path(uri, opf_href, lib=posixpath)
-        if full_uri in repl_map:
-            return "url('%s%s%s')" % (advance_str, repl_map[full_uri], suf)
-        else:
-            return m[0]
-
-    def hxml_repl(m):
-        link = unquote(m['link'])
-        if link.startswith(('#', '/')) or CRE_PROT.match(link) is not None:
-            return m[0]
-
-        uri, suf = CRE_LINK.fullmatch(link).groups()
-        full_uri = relative_path(uri, opf_href, lib=posixpath)
-        if full_uri in repl_map:
-            return m[1] + advance_str + repl_map[full_uri] + suf
+        full_link = relative_path(link, srcpath, lib=posixpath)
+        if full_link in repl_map:
+            dest_href = rel_ref(srcpath, repl_map[full_link])
+            return m[1] + urlunparse(urlparts._replace(path=dest_href))
         else:
             return m[0]
 
     def sub_url_in_html(text, cre=CRE_EL_STYLE):
         ls_repl_part = []
         for match in cre.finditer(text):
-            repl_part, n = CRE_URL.subn(css_repl, match[0])
+            repl_part, n = CRE_URL.subn(url_repl, match[0])
             if n > 0:
                 ls_repl_part.append((match.span(), repl_part))
         if ls_repl_part:
@@ -211,10 +223,6 @@ def rename_in_epub(
     with ZipFile(epub_path, mode='r') as src_epub, \
             ZipFile(epub_path2, mode='w') as tgt_epub:
         opf_path = get_opf_path(src_epub)
-        opf_root, opf_name = posixpath.split(opf_path)
-        opf_root += '/'
-        opf_root_len = len(opf_root)
-
         itemmap = get_opf_itemmap(src_epub, opf_path)
         repl_map = make_repl_map(
             itemmap=itemmap, 
@@ -225,60 +233,51 @@ def rename_in_epub(
 
         for zipinfo in src_epub.filelist:
             if zipinfo.is_dir():
-                continue # ignore directories
+                continue
 
-            zi_filename: str = zipinfo.filename
+            srcpath: str = zipinfo.filename
+            is_opf: bool = srcpath == opf_path
 
-            if zi_filename == 'META-INF/encryption.xml':
-                if remove_encrypt_file:
+            if not is_opf and srcpath not in itemmap:
+                if srcpath.startswith('META-INF/'):
+                    if srcpath == 'META-INF/encryption.xml':
+                        if remove_encrypt_file:
+                            continue
+                        else:
+                            has_encrypt_file = True
+                elif srcpath != 'mimetype':
+                    print('⚠️ 跳过文件', srcpath, 
+                        '，因为它未在 %s 内被列出' % opf_path)
                     continue
-                else:
-                    has_encrypt_file = True
-
-            if not zi_filename.startswith(opf_root):
                 tgt_epub.writestr(zipinfo, src_epub.read(zipinfo))
                 continue
 
-            opf_href: str = zi_filename[opf_root_len:]  
-            if opf_href not in itemmap and opf_href != opf_name:
-                print('⚠️ 跳过文件', zi_filename, 
-                      '，因为它未在 %s 内被列出' % opf_path)
-                continue
-
             if is_empty_scan_dirs:
-                content = src_epub.read(zipinfo)
-                zipinfo.file_size = len(content)
-                tgt_epub.writestr(zipinfo, content)
+                tgt_epub.writestr(zipinfo, src_epub.read(zipinfo))
                 continue
 
-            is_opf_file = opf_href == opf_name
-
-            advance_str = ''
-            mimetype = None
-            if opf_href in itemmap:
-                item_attrib = itemmap[opf_href]
+            if not is_opf:
+                item_attrib = itemmap[srcpath]
                 mimetype = item_attrib['media-type']
-                if opf_href in repl_map:
-                    advance_str = '../' * (len(repl_map[opf_href].split('/')) - 1)
 
             content = src_epub.read(zipinfo)
 
-            if is_opf_file or mimetype in ('text/css', 'text/html', 'application/xml', 
-                                           'application/xhtml+xml', 'application/x-dtbncx+xml'):
+            if is_opf or mimetype in ('text/css', 'text/html', 
+                    'application/xhtml+xml', 'application/x-dtbncx+xml'):
                 text = content.decode('utf-8')
-                if is_opf_file or mimetype != 'text/css':
-                    text_new = CRE_HREF.sub(hxml_repl, text)
-                    text_new = CRE_SRC.sub(hxml_repl, text_new)
-                    if mimetype in ('text/html', 'application/xhtml+xml'):
-                        text_new = sub_url_in_html(text_new, CRE_EL_STYLE)
-                        text_new = sub_url_in_html(text_new, CRE_INLINE_STYLE)
+                if is_opf or mimetype == 'application/x-dtbncx+xml':
+                    text_new = CRE_REF.sub(ref_repl, text)
+                elif mimetype == 'text/css':
+                    text_new = CRE_URL.sub(url_repl, text)
                 else:
-                    text_new = CRE_URL.sub(css_repl, text)
+                    text_new = CRE_REF.sub(ref_repl, text)
+                    text_new = sub_url_in_html(text_new, CRE_EL_STYLE)
+                    text_new = sub_url_in_html(text_new, CRE_INLINE_STYLE)  
                 if text != text_new:
                     content = text_new.encode('utf-8')
                     zipinfo.file_size = len(content)
 
-            zipinfo.filename = opf_root + unquote(repl_map.get(opf_href, opf_href))
+            zipinfo.filename = unquote(repl_map.get(srcpath, srcpath))
             tgt_epub.writestr(zipinfo, content)
 
         if add_encrypt_file and not has_encrypt_file:
@@ -295,7 +294,7 @@ def main(
     if args is None:
         args = PARSER.parse_args(argv)
 
-    epub_list = args.path + args.list
+    epub_list: List[str] = args.path + args.list
 
     try:
         method = NAME_GENERATORS[args.method]
@@ -332,11 +331,13 @@ def main(
     print('【采用方法】\n', method.__name__, '\n')
     print('【方法说明】\n', method.__doc__, '\n')
     print('【处理结果】')
+
+    recursive: bool = args.recursive
     if args.glob:
         from glob import iglob
 
         for epub_glob in epub_list:
-            for fpath in iglob(epub_glob, recursive=args.recursive):
+            for fpath in iglob(epub_glob, recursive=recursive):
                 if path.isfile(fpath):
                     process_file(fpath)
     else:
@@ -346,7 +347,7 @@ def main(
             if not path.exists(epub):
                 print('🚨 跳过不存在的文件或文件夹：', epub)
             elif path.isdir(epub):
-                for fpath in iter_scan_files(epub, recursive=args.recursive):
+                for fpath in iter_scan_files(epub, recursive=recursive): # type: ignore
                     if fpath.endswith('.epub'):
                         process_file(fpath)
             else:

@@ -2,7 +2,7 @@ __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
 __version__ = (0, 0, 2)
 
 
-from lxml.etree import ElementBase
+from lxml.etree import _Element
 
 
 __all__ = ['is_child', 'is_descendant', 'is_first_child', 'is_only_child', 
@@ -47,7 +47,7 @@ def is_first_child(
 
     if consider_only_elementbase:
         cels = el.xpath('preceding-sibling::node()')
-        return sum(isinstance(cel, ElementBase) for cel in cels) > 1
+        return sum(isinstance(cel, _Element) for cel in cels) > 1
     if consider_text_sibings:
         pred_text = el.xpath('preceding-sibling::text()[1]')
         if pred_text and pred_text[0].strip():
@@ -75,8 +75,8 @@ def is_only_child(
     if consider_only_elementbase:
         cels = pel.xpath('child::node()')
         return sum(
-                isinstance(cel, ElementBase) for cel in cels
-               ) - isinstance(el, ElementBase) == 0
+                isinstance(cel, _Element) for cel in cels
+               ) - isinstance(el, _Element) == 0
     if len(pel) > 1:
         return False
     if consider_text_sibings:
@@ -155,4 +155,6 @@ def is_first_only_descendant(
     return is_first_child(el, target_el, 
                           consider_text_sibings, 
                           consider_only_elementbase)
+
+
 
