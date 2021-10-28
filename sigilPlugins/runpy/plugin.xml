@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin>
+<name>runpy</name>
+<type>edit</type>
+<author>ChenyangGao(https://chenyanggao.github.io/)</author>
+<description>执行python脚本</description>
+<engine>python2.7,python3.4</engine>
+<version>0.0.1</version>
+<autostart>true</autostart>
+<autoclose>true</autoclose>
+<oslist>osx,win,unx</oslist>
+</plugin>

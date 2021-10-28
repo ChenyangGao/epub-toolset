@@ -127,11 +127,17 @@ def make_repl_map(
             generate_name = key_map[key] = generate(attrib)
 
         append = name_dict['append']
+        suffix = name_dict['suffix']
+        stem, sffx = posixpath.splitext(generate_name)
         if append:
-            stem, suffix = posixpath.splitext(generate_name)
-            newname = '%s%s%s' % (stem, append, suffix)
-        else:
+            if sffx == suffix:
+                newname = '%s%s%s' % (stem, append, suffix)
+            else:
+                newname = '%s%s%s' % (generate_name, append, suffix)
+        elif sffx == suffix:
             newname = generate_name
+        else:
+            newname = generate_name + suffix
 
         # 最多 2 级文件夹，超过则直接移动文件到 2 级文件夹内
         if len(parts) > 2:
