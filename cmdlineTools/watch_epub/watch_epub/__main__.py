@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 1)
+__version__ = (0, 1, 2)
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
@@ -70,38 +70,38 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
             or fnmatch(basename, ".*")
         )
 
-    def init_workdir(dir_):
-        from pkgutil import get_data
-
-        data = get_data("src", "init.epub")
-        bio = BytesIO()
-        bio.write(data)
-        bio.seek(0)
-        zf = ZipFile(bio)
-        zf.extractall(dir_)
-        opffile = zf.read('OEBPS/content.opf')
-        opf_updated = Template(opffile.decode("utf-8")).substitute(
-            uuid=str(uuid4()), 
-            modified=datetime.now().strftime("%FT%XZ"), 
-        )
-        open(syspath.join(dir_, 'OEBPS/content.opf'), "w").write(opf_updated)
-
     init: Callable
     need_make_new = not syspath.exists(path)
     if need_make_new:
-        init = init_workdir
+        def init_dir(dir_):
+            from pkgutil import get_data
+
+            data = get_data("src", "init.epub")
+            bio = BytesIO()
+            bio.write(data)
+            bio.seek(0)
+            with ZipFile(bio) as zf:
+                zf.extractall(dir_)
+            opffile = zf.read('OEBPS/content.opf')
+            opf_updated = Template(opffile.decode("utf-8")).substitute(
+                uuid=str(uuid4()), 
+                modified=datetime.now().strftime("%FT%XZ"), 
+            )
+            open(syspath.join(dir_, 'OEBPS/content.opf'), "w").write(opf_updated)
     else:
-        zf = ZipFile(path)
-        init = zf.extractall
+        def init_dir(dir_):
+            with ZipFile(path) as init:
+                zf.extractall(dir_)
+
     dirname, basename = syspath.split(path)
     if basename.endswith(".epub"):
         stem = basename[:-len(".epub")]
     else:
         stem = basename
     stem = re_sub("_\d{10,}$", "", stem)
-    
+
     with TemporaryDirectory() as tempdir:
-        init(tempdir)
+        init_dir(tempdir)
         yield tempdir
         if need_make_new:
             target_path = path
