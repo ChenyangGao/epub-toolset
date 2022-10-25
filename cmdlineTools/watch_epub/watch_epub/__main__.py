@@ -82,7 +82,7 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
             bio.seek(0)
             with ZipFile(bio) as zf:
                 zf.extractall(dir_)
-            opffile = zf.read('OEBPS/content.opf')
+                opffile = zf.read('OEBPS/content.opf')
             opf_updated = Template(opffile.decode("utf-8")).substitute(
                 uuid=str(uuid4()), 
                 modified=datetime.now().strftime("%FT%XZ"), 
