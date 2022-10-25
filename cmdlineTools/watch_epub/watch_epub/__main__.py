@@ -90,7 +90,7 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
             open(syspath.join(dir_, 'OEBPS/content.opf'), "w").write(opf_updated)
     else:
         def init_dir(dir_):
-            with ZipFile(path) as init:
+            with ZipFile(path) as zf:
                 zf.extractall(dir_)
 
     dirname, basename = syspath.split(path)
