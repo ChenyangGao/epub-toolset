@@ -66,6 +66,7 @@ TEXT_MIMETYPES = [
     'application/pls+xml'
 ]
 
+MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if mime == "Text")
 
 def _epub_file_walk(top):
     top = os.fsdecode(top)
@@ -667,6 +668,10 @@ class Wrapper(object):
         self.id_to_bookpath[uniqueid] = bookpath
         self.href_to_id[href] = uniqueid
         self.bookpath_to_id[bookpath] = uniqueid
+
+        # add to spine
+        if mime in MIME_OF_TEXT:
+            self.spine.append((uniqueid, False, None))
 
         return uniqueid, bookpath, mime
 

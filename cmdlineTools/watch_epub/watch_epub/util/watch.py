@@ -26,7 +26,7 @@ from watchdog.events import ( # type: ignore
 )
 from watchdog.observers import Observer # type: ignore
 
-from util.hrefutils import mime_group_map
+from util.hrefutils import buildRelativePath, mime_group_map
 from util.pathutils import guess_mimetype, relative_path, to_syspath, to_posixpath
 from util.wrapper import Wrapper
 
@@ -443,8 +443,22 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 "Ignored moved event, because file has already been moved: %r" 
                     % src_bookpath)
         else:
-            self.wrapper.deletefile_by_path(src_bookpath)
-            self.wrapper.addfile(dest_bookpath)
+            if posixpath.splitext(src_bookpath)[1] == posixpath.splitext(dest_bookpath)[1]:
+                wrapper = self._wrapper
+                oldpath = src_bookpath
+                newpath = dest_bookpath
+                fid = wrapper.bookpath_to_id[oldpath]
+                oldhref = wrapper.id_to_href[fid]
+                newhref = buildRelativePath(wrapper.opfbookpath, newpath)
+                del wrapper.bookpath_to_id[oldpath]
+                del wrapper.href_to_id[oldhref]
+                wrapper.href_to_id[newhref] = fid
+                wrapper.bookpath_to_id[newpath] = fid
+                wrapper.id_to_filepath[fid] = newpath
+                wrapper.id_to_href[fid] = newhref
+            else:
+                self.wrapper.deletefile_by_path(src_bookpath)
+                self.wrapper.addfile(dest_bookpath)
 
             old_mtime = self._file_mtime[src_path]
             self._file_mtime[dest_path] = old_mtime
