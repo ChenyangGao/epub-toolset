@@ -671,7 +671,7 @@ class Wrapper(object):
 
         # add to spine
         if mime in MIME_OF_TEXT:
-            self.spine.append((uniqueid, False, None))
+            self.spine.append((uniqueid, "no", None))
 
         return uniqueid, bookpath, mime
 
