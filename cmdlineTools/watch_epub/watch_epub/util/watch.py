@@ -26,13 +26,13 @@ from watchdog.events import ( # type: ignore
 )
 from watchdog.observers import Observer # type: ignore
 
-from util.hrefutils import buildRelativePath, mime_group_map
+from util.hrefutils import buildRelativePath, group_mimes_map
 from util.pathutils import guess_mimetype, relative_path, to_syspath, to_posixpath
 from util.wrapper import Wrapper
 
 
-MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if group == "Text")
-MIMES_OF_STYLES = frozenset(mime for mime, group in mime_group_map.items() if group == "Styles")
+MIMES_OF_TEXT = group_mimes_map["Text"]
+MIMES_OF_STYLES = group_mimes_map["Styles"]
 
 CRE_PROT: Final[Pattern] = re_compile(r'^\w+://')
 CRE_REF: Final[Pattern] = re_compile(
@@ -53,6 +53,8 @@ _fmt.datefmt = '%Y-%m-%d %H:%M:%S'
 _sh.setFormatter(_fmt)
 
 
+
+# TODO: 使用策略模式
 def analyze_one(bookpath, data, mime=None):
     """"""
     def gen_filtered_links(links):
@@ -68,7 +70,7 @@ def analyze_one(bookpath, data, mime=None):
         return Counter(gen_filtered_links(
             next(filter(None, m.groups())) 
             for m in CRE_URL.finditer(data)))
-    elif mime in MIME_OF_TEXT:
+    elif mime in MIMES_OF_TEXT:
         return {
             'ref': Counter(gen_filtered_links(
                 m['link'] 
@@ -90,11 +92,11 @@ def analyze(wrapper):
     map_ref_pathset = defaultdict(set)
 
     for fid, href, mime in wrapper.manifest_iter():
-        if mime not in MIME_OF_TEXT or mime not in MIMES_OF_STYLES:
+        if mime not in MIMES_OF_TEXT or mime not in MIMES_OF_STYLES:
             continue
 
         bookpath = wrapper.id_to_bookpath[fid]
-        
+
         realpath = syspath.join(wrapper.ebook_root, to_syspath(bookpath, posixpath))
         content = open(realpath, encoding="utf-8").read()
         result = analyze_one(bookpath, content, mime)
@@ -102,7 +104,7 @@ def analyze(wrapper):
         if mime in MIMES_OF_STYLES:
             for ref_bookpath in result:
                 map_ref_pathset[ref_bookpath].add(bookpath)
-        elif mime in MIME_OF_TEXT:
+        elif mime in MIMES_OF_TEXT:
             for refset in result.values():
                 for ref_bookpath in refset:
                     map_ref_pathset[ref_bookpath].add(bookpath)
@@ -131,6 +133,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
     @property
     def watchdir(self):
+        """"""
         return self._watchdir
 
     @property
@@ -138,15 +141,25 @@ class EpubFileEventHandler(FileSystemEventHandler):
         return self._wrapper
 
     def get_bookpath(self, path):
+        """"""
         return to_posixpath(realpath(path)[len(self._watchdir):])
 
     def get_path(self, bookpath):
+        """"""
         return syspath.join(self._watchdir, to_syspath(bookpath, posixpath))
+
+    def get_mime(self, bookpath):
+        """"""
+        wrapper = self._wrapper
+        if bookpath in wrapper.bookpath_to_id:
+            return wrapper.id_to_mime[wrapper.bookpath_to_id[bookpath]]
+        else:
+            return guess_mimetype(bookpath)
 
     def _add_bookpath_ref(self, bookpath, mime=None):
         if mime is None:
-            mime = guess_mimetype(bookpath)
-        if mime in MIMES_OF_STYLES or mime in MIME_OF_TEXT:
+            mime = self.get_mime(bookpath)
+        if mime in MIMES_OF_STYLES or mime in MIMES_OF_TEXT:
             try:
                 realpath = self.get_path(bookpath)
                 content = open(realpath, encoding="utf-8").read()
@@ -158,23 +171,23 @@ class EpubFileEventHandler(FileSystemEventHandler):
             if not result:
                 return
             self._map_path_refset[bookpath] = result
-            if mime in MIME_OF_TEXT:
+            if mime in MIMES_OF_TEXT:
                 for ref_bookpath in result:
                     self._map_ref_pathset[ref_bookpath].add(bookpath)
-            elif mime in MIME_OF_TEXT:
+            elif mime in MIMES_OF_TEXT:
                 for refset in result.values():
                     for ref_bookpath in refset:
                         self._map_ref_pathset[ref_bookpath].add(bookpath)
 
     def _del_bookpath_ref(self, bookpath, mime=None):
         if mime is None:
-            mime = guess_mimetype(bookpath)
-        if mime in MIME_OF_TEXT:
+            mime = self.get_mime(bookpath)
+        if mime in MIMES_OF_TEXT:
             refset = self._map_path_refset.pop(bookpath, None)
             if refset:
                 for ref in refset:
                     self._map_ref_pathset[ref].discard(bookpath)
-        elif mime in MIME_OF_TEXT:
+        elif mime in MIMES_OF_TEXT:
             result = self._map_path_refset.pop(bookpath, None)
             if result:
                 for refset in result.values():
@@ -333,6 +346,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             self.on_modified(FileModifiedEvent(refby_srcpath), _keep_callbacks=True)
 
     def on_created(self, event):
+        """"""
         src_path = event.src_path
         self._file_missing.pop(src_path, None)
 
@@ -356,6 +370,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             self.logger.info("Created file: %r" % bookpath)
 
     def on_deleted(self, event):
+        """"""
         src_path = event.src_path
         self._file_missing.pop(src_path, None)
 
@@ -383,6 +398,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             delete(bookpath)
 
     def on_modified(self, event, _keep_callbacks=False):
+        """"""
         # NOTE: When a file is modified, two modified events will be triggered, 
         #       the first is truncation, and the second is writing.
         src_path = event.src_path
@@ -416,6 +432,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 self.logger.info("Modified file: %r", bookpath)
 
     def on_moved(self, event):
+        """"""
         src_path, dest_path = event.src_path, event.dest_path
         src_bookpath = self.get_bookpath(src_path)
         dest_bookpath = self.get_bookpath(dest_path)
@@ -476,11 +493,11 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
             result = map_path_refset.get(src_bookpath)
             self._del_bookpath_ref(src_bookpath)
-            old_mime = guess_mimetype(src_bookpath)
-            mime = guess_mimetype(dest_bookpath)
+            old_mime = self.get_mime(src_bookpath)
+            mime = self.get_mime(dest_bookpath)
             if result is not None and old_mime == mime:
                 map_path_refset[dest_bookpath] = result
-                if mime in MIME_OF_TEXT:
+                if mime in MIMES_OF_TEXT:
                     for ref_bookpath in result:
                         map_ref_pathset[ref_bookpath].add(dest_bookpath)
                 else:

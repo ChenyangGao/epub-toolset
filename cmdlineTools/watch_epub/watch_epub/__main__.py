@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 3)
+__version__ = (0, 1, 4)
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
@@ -30,11 +30,16 @@ if __name__ == "__main__":
     if args.epub_path is None:
         parser.parse_args(["-h"])
 
+import sys
+
+if sys.version_info < (3, 8):
+    raise SystemExit("Python 版本不得低于 3.8，你的版本是\n%s" % sys.version)
+
 try:
     import watchdog # type: ignore
 except ImportError:
     choose = input("检测到缺少模块 watchdog，是否安装？ [y]/n").strip()
-    if not choose or choose.lower() == "y":
+    if not choose or choose.lower() in ("y", "yes"):
         from util.usepip import install
 
         install("watchdog", index_url="https://pypi.tuna.tsinghua.edu.cn/simple")

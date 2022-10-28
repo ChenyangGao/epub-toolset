@@ -66,7 +66,7 @@ TEXT_MIMETYPES = [
     'application/pls+xml'
 ]
 
-MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if group == "Text")
+MIMES_OF_TEXT = group_mimes_map["Text"]
 
 def _epub_file_walk(top):
     top = os.fsdecode(top)
@@ -92,6 +92,8 @@ def get_opfpath(dir_=""):
 class WrapperException(Exception):
     pass
 
+
+# TODO: Wrapper 改名为 OpfWrapper，继承 OpfParser，并且混入各种方法
 class Wrapper(object):
 
     def __init__(self, ebook_root):
@@ -238,7 +240,6 @@ class Wrapper(object):
             std_epub = std_epub and folders[0] == p and len(folders) == 1
         return std_epub
 
-
     # routines to rebuild the opf on the fly from current information
     def build_package_starttag(self):
         return self.package_tag
@@ -336,7 +337,6 @@ class Wrapper(object):
                 data = _utf8str(self.build_opf())
                 fp.write(data)
 
-
     # routines to help find the manifest id of toc.ncx and page-map.xml
 
     def gettocid(self):
@@ -353,7 +353,6 @@ class Wrapper(object):
                 return id
         return None
 
-
     # routines to help find the manifest id of the nav
     def getnavid(self):
         if self.epub_version == "2.0":
@@ -365,7 +364,6 @@ class Wrapper(object):
                 if properties is not None and "nav" in properties:
                     return id
         return None
-
 
     # routines to manipulate the spine
 
@@ -511,7 +509,6 @@ class Wrapper(object):
     def setmetadataxml(self, new_metadata):
         self.metadataxml = _unicodestr(new_metadata)
         self.modified[self.opfbookpath] = 'file'
-
 
     # routines to get and set the package tag
     def getpackagetag(self):
@@ -670,7 +667,7 @@ class Wrapper(object):
         self.bookpath_to_id[bookpath] = uniqueid
 
         # add to spine
-        if mime in MIME_OF_TEXT:
+        if mime in MIMES_OF_TEXT:
             self.spine.append((uniqueid, "no", None))
 
         return uniqueid, bookpath, mime

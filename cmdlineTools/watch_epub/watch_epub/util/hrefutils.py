@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
+# TODO: 这个模块合并到 pathutils 中，有些函数，会被合并同类项后删除
+
 import mimetypes
 import sys
 
-from urllib.parse import unquote
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, unquote
 
 # default to using the preferred media-types ffrom the epub 3.2 spec
 # https://www.w3.org/publishing/epub3/epub-spec.html#sec-cmt-supported
@@ -20,7 +21,7 @@ ext_mime_map = {
     '.html'  : 'application/xhtml+xml',
     '.jpeg'  : 'image/jpeg',
     '.jpg'   : 'image/jpeg',
-    '.js'    : 'application/javascript',
+    '.js'    : 'text/javascript',
     '.m4a'   : 'audio/mp4',
     '.m4v'   : 'video/mp4',
     '.mp3'   : 'audio/mpeg',
@@ -49,9 +50,6 @@ ext_mime_map = {
     '.xhtml' : 'application/xhtml+xml',
     '.xml'   : 'application/oebps-page-map+xml',
     '.xpgt'  : 'application/vnd.adobe-page-template+xml',
-    # '.js'    : = "text/javascript',
-    # '.otf'   : 'application/x-font-opentype',
-    # '.otf'   : 'application/font-sfnt',
 }
 
 for ext, mimetype in ext_mime_map.items():
@@ -114,6 +112,13 @@ mime_group_map = {
     'application/pls+xml'                     : 'Misc',
     'text/plain'                              : 'Misc',
 }
+
+group_mimes_map = {}
+for mime, group in mime_group_map.items():
+    if group in group_mimes_map:
+        group_mimes_map[group] = set(mime)
+    else:
+        group_mimes_map[group].add(mime)
 
 # Note any # char in the href path component must be url encoded
 # if fragments can exist
@@ -303,71 +308,3 @@ def unquoteurl(href):
     href = unquote(href)
     return href
 
-
-def main():
-    p1 = 'This/is/the/../../end.txt'
-    print('Testing resolveRelativeSegmentsInFilePath(file_path)')
-    print('    file_path: ', p1)
-    print(resolveRelativeSegmentsInFilePath(p1))
-    print('    ')
-
-    p1 = 'hello.txt'
-    p2 = 'goodbye.txt'
-    print('Testing buildRelativePath(from_bkpath,to_bkpath')
-    print('    from_bkpath: ', p1)
-    print('    to_bkpath:   ', p2)
-    print(buildRelativePath(p1, p2))
-    print('    ')
-
-    p1 = 'OEBPS/Text/book1/chapter1.xhtml'
-    p2 = 'OEBPS/Text/book2/chapter1.xhtml'
-    print('Testing buildRelativePath(from_bkpath,to_bkpath)')
-    print('    from_bkpath: ', p1)
-    print('    to_bkpath:   ', p2)
-    print(buildRelativePath(p1, p2))
-    print('    ')
-
-    p1 = 'OEBPS/package.opf'
-    p2 = 'OEBPS/Text/book1/chapter1.xhtml'
-    print('Testing buildRelativePath(from_bkpath, to_bkpath)')
-    print('    from_bkpath: ', p1)
-    print('    to_bkpath:   ', p2)
-    print(buildRelativePath(p1, p2))
-    print('    ')
-
-    p1 = '../../Images/image.png'
-    p2 = 'OEBPS/Text/book1/'
-    print('Testing buildBookPath(destination_href, start_dir)')
-    print('    destination_href: ', p1)
-    print('    starting_dir:     ', p2)
-    print(buildBookPath(p1, p2))
-    print('    ')
-
-    p1 = 'image.png'
-    p2 = ''
-    print('Testing buildBookPath(destination_href, start_dir)')
-    print('    destination_href: ', p1)
-    print('    starting_dir:     ', p2)
-    print(buildBookPath(p1, p2))
-    print('    ')
-
-    p1 = 'content.opf'
-    print('Testing startingDir(bookpath')
-    print('    bookpath: ', p1)
-    print('"' + startingDir(p1) + '"')
-    print('    ')
-
-    bookpaths = []
-    bookpaths.append('OEBPS/book1/text/chapter1.xhtml')
-    bookpaths.append('OEBPS/book1/html/chapter2.xhtml')
-    bookpaths.append('OEBPS/book2/text/chapter3.xhtml')
-    print('Testing longestCommonPath(bookpaths)')
-    print('    bookpaths: ', bookpaths)
-    print('"' + longestCommonPath(bookpaths) + '"')
-    print('    ')
-
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())
