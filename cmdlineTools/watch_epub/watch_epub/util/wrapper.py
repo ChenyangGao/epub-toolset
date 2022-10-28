@@ -66,7 +66,7 @@ TEXT_MIMETYPES = [
     'application/pls+xml'
 ]
 
-MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if mime == "Text")
+MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if group == "Text")
 
 def _epub_file_walk(top):
     top = os.fsdecode(top)

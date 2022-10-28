@@ -31,8 +31,8 @@ from util.pathutils import guess_mimetype, relative_path, to_syspath, to_posixpa
 from util.wrapper import Wrapper
 
 
-MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if mime == "Text")
-MIMES_OF_STYLES = frozenset(mime for mime, group in mime_group_map.items() if mime == "Styles")
+MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if group == "Text")
+MIMES_OF_STYLES = frozenset(mime for mime, group in mime_group_map.items() if group == "Styles")
 
 CRE_PROT: Final[Pattern] = re_compile(r'^\w+://')
 CRE_REF: Final[Pattern] = re_compile(
