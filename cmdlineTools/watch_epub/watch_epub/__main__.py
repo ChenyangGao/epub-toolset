@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 2)
+__version__ = (0, 1, 3)
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter

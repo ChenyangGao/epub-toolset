@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+ #!/usr/bin/env python
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
@@ -26,9 +26,13 @@ from watchdog.events import ( # type: ignore
 )
 from watchdog.observers import Observer # type: ignore
 
+from util.hrefutils import mime_group_map
 from util.pathutils import guess_mimetype, relative_path, to_syspath, to_posixpath
 from util.wrapper import Wrapper
 
+
+MIME_OF_TEXT = frozenset(mime for mime, group in mime_group_map.items() if mime == "Text")
+MIMES_OF_STYLES = frozenset(mime for mime, group in mime_group_map.items() if mime == "Styles")
 
 CRE_PROT: Final[Pattern] = re_compile(r'^\w+://')
 CRE_REF: Final[Pattern] = re_compile(
@@ -60,11 +64,11 @@ def analyze_one(bookpath, data, mime=None):
             yield ref_path
     if mime is None:
         mime = guess_mimetype(bookpath)
-    if mime == 'text/css':
+    if mime in MIMES_OF_STYLES:
         return Counter(gen_filtered_links(
             next(filter(None, m.groups())) 
             for m in CRE_URL.finditer(data)))
-    elif mime in ('text/html', 'application/xhtml+xml'):
+    elif mime in MIME_OF_TEXT:
         return {
             'ref': Counter(gen_filtered_links(
                 m['link'] 
@@ -86,7 +90,7 @@ def analyze(wrapper):
     map_ref_pathset = defaultdict(set)
 
     for fid, href, mime in wrapper.manifest_iter():
-        if mime not in ('text/css', 'text/html', 'application/xhtml+xml'):
+        if mime not in MIME_OF_TEXT or mime not in MIMES_OF_STYLES:
             continue
 
         bookpath = wrapper.id_to_bookpath[fid]
@@ -95,10 +99,10 @@ def analyze(wrapper):
         content = open(realpath, encoding="utf-8").read()
         result = analyze_one(bookpath, content, mime)
         map_path_refset[bookpath] = result
-        if mime == 'text/css':
+        if mime in MIMES_OF_STYLES:
             for ref_bookpath in result:
                 map_ref_pathset[ref_bookpath].add(bookpath)
-        elif mime in ('text/html', 'application/xhtml+xml'):
+        elif mime in MIME_OF_TEXT:
             for refset in result.values():
                 for ref_bookpath in refset:
                     map_ref_pathset[ref_bookpath].add(bookpath)
@@ -142,7 +146,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
     def _add_bookpath_ref(self, bookpath, mime=None):
         if mime is None:
             mime = guess_mimetype(bookpath)
-        if mime in ('text/css', 'text/html', 'application/xhtml+xml'):
+        if mime in MIMES_OF_STYLES or mime in MIME_OF_TEXT:
             try:
                 realpath = self.get_path(bookpath)
                 content = open(realpath, encoding="utf-8").read()
@@ -151,11 +155,13 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 #       then called when the modified event is triggered
                 return
             result = analyze_one(bookpath, content)
+            if not result:
+                return
             self._map_path_refset[bookpath] = result
-            if mime == 'text/css':
+            if mime in MIME_OF_TEXT:
                 for ref_bookpath in result:
                     self._map_ref_pathset[ref_bookpath].add(bookpath)
-            elif mime in ('text/html', 'application/xhtml+xml'):
+            elif mime in MIME_OF_TEXT:
                 for refset in result.values():
                     for ref_bookpath in refset:
                         self._map_ref_pathset[ref_bookpath].add(bookpath)
@@ -163,12 +169,12 @@ class EpubFileEventHandler(FileSystemEventHandler):
     def _del_bookpath_ref(self, bookpath, mime=None):
         if mime is None:
             mime = guess_mimetype(bookpath)
-        if mime == 'text/css':
+        if mime in MIME_OF_TEXT:
             refset = self._map_path_refset.pop(bookpath, None)
             if refset:
                 for ref in refset:
                     self._map_ref_pathset[ref].discard(bookpath)
-        elif mime in ('text/html', 'application/xhtml+xml'):
+        elif mime in MIME_OF_TEXT:
             result = self._map_path_refset.pop(bookpath, None)
             if result:
                 for refset in result.values():
@@ -460,7 +466,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             mime = guess_mimetype(dest_bookpath)
             if result is not None and old_mime == mime:
                 map_path_refset[dest_bookpath] = result
-                if mime == 'text/css':
+                if mime in MIME_OF_TEXT:
                     for ref_bookpath in result:
                         map_ref_pathset[ref_bookpath].add(dest_bookpath)
                 else:

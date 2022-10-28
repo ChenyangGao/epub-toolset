@@ -8,13 +8,14 @@ from xml.etree.ElementTree import fromstring
 
 from uuid import uuid4
 
+import mimetypes
 import sys
 import os
 import re
 import posixpath
 from util.hrefutils import urldecodepart, urlencodepart
 from util.hrefutils import buildBookPath, startingDir, buildRelativePath
-from util.hrefutils import ext_mime_map, mime_group_map
+from util.hrefutils import mime_group_map
 
 from util.opf_parser import Opf_Parser
 
@@ -158,11 +159,7 @@ class Wrapper(object):
     def getmime(self, href):
         href = _unicodestr(href)
         href = urldecodepart(href)
-        filename = os.path.basename(href)
-        ext = os.path.splitext(filename)[1]
-        ext = ext.lower()
-        return ext_mime_map.get(ext, "")
-
+        return mimetypes.guess_type(href)[0]
 
     # New in Sigil 1.1
     # ------------------
@@ -651,9 +648,7 @@ class Wrapper(object):
                 raise WrapperException('Manifest Id is not unique')
         mime = _unicodestr(mime)
         if mime is None:
-            ext = os.path.splitext(basename)[1]
-            ext = ext.lower()
-            mime = ext_mime_map.get(ext, None)
+            mime = mimetypes.guess_type(basename)[0]
         if mime is None:
             raise WrapperException("Mime Type Missing")
         if mime == "application/x-dtbncx+xml" and self.epub_version.startswith("2"):

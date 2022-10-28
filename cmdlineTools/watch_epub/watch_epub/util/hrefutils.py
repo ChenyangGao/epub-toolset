@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
+import mimetypes
 import sys
 
 from urllib.parse import unquote
@@ -53,6 +54,8 @@ ext_mime_map = {
     # '.otf'   : 'application/font-sfnt',
 }
 
+for ext, mimetype in ext_mime_map.items():
+    mimetypes.add_type(mimetype, ext)
 
 # deprecated font mediatypes
 # See https://www.iana.org/assignments/media-types/media-types.xhtml#font
