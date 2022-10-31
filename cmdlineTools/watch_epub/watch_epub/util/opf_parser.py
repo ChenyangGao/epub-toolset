@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-__version__ = (0, 1)
+__version__ = (0, 1, 1)
 
 import sys
 import os
 
-from util.hrefutils import urldecodepart, buildBookPath, startingDir, longestCommonPath
-from util.hrefutils import mime_group_map
-from collections import OrderedDict
+from os import path as syspath
 
-SPECIAL_HANDLING_TAGS = OrderedDict([
+from util.hrefutils import urldecodepart, buildBookPath, startingDir, longestCommonPath
+
+
+SPECIAL_HANDLING_TAGS = dict([
     ('?xml', ('xmlheader', -1)),
     ('!--', ('comment', -3)),
     ('!DOCTYPE', ('doctype', -1))
@@ -28,49 +29,50 @@ def build_short_name(bookpath, lvl):
     pieces = pieces[n - lvl:n]
     return "/".join(pieces)
 
-class Opf_Parser(object):
+# TODO: 太复杂了，需要简化
+def get_opf_bookpath(ebook_root=""):
+    path_to_container_xml = syspath.join(topdir, "META-INF/container.xml")
+    tree = fromstring(open(path_to_container_xml, "rb").read())
+    return tree.find('.//*[@media-type="application/oebps-package+xml"]').attrib["full-path"]
 
-    def __init__(self, opf_path, opf_bookpath):
-        opf_path = os.fsdecode(opf_path)
-        self.opfname = os.path.basename(opf_bookpath)
+
+class OpfParser(object):
+
+    def __init__(self, ebook_root=""):
+        super().__init__(ebook_root)
+
+        opf_bookpath = get_opf_bookpath(ebook_root)
+        opf_path = syspath.join(self.ebook_root, opf_bookpath)
+
         self.opf_bookpath = opf_bookpath
         self.opf_dir = startingDir(opf_bookpath)
-        self.opf = open(opf_path, 'r', encoding="utf-8").read()
+        self.opfname = os.path.basename(opf_bookpath)
+
+        self.opf = open(opf_path, "r", encoding="utf-8").read()
         self.opos = 0
         self.package = None
         self.metadata_attr = None
         self.metadata = []
         self.cover_id = None
 
-        # let downstream invert any invertable dictionaries when needed
-        self.manifest_id_to_href = OrderedDict()
-        self.manifest_id_to_bookpath = OrderedDict()
-
-        # create non-invertable dictionaries
-        self.manifest_id_to_mime = OrderedDict()
-        self.manifest_id_to_properties = OrderedDict()
-        self.manifest_id_to_fallback = OrderedDict()
-        self.manifest_id_to_overlay = OrderedDict()
+        # 
+        self.id_to_bookpath = {}
+        self.id_to_href = {}
+        self.id_to_mime = {}
+        self.id_to_properties = {}
+        self.id_to_fallback = {}
+        self.id_to_overlay = {}
+        self.bookpath_to_id = {}
 
         # spine and guide
         self.spine = []
         self.spine_ppd = None
         self.guide = []
         self.bindings = []
-
-        # determine folder structure
-        self.group_folder = OrderedDict()
-        self.group_count = OrderedDict()
-        self.group_folder["epub"] = ['META-INF']
-        self.group_count["epub"] = [1]
-        self.group_folder["opf"] = [self.opf_dir]
-        self.group_count["opf"] = [1]
-
-        # self.bookpaths = []
-        # self.bookpaths.append(self.opf_bookpath)
-
         self._parseData()
 
+    def get_path(self, bookpath):
+        return syspath.join(self.ebook_root, bookpath)
 
     # OPF tag iterator
     def _opf_tag_iter(self):
@@ -96,7 +98,7 @@ class Opf_Parser(object):
                         prefix.pop()
                         tattr = last_tattr
                         if tattr is None:
-                            tattr = OrderedDict()
+                            tattr = {}
                         last_tattr = None
                     elif ttype == 'single':
                         tcontent = None
@@ -134,8 +136,6 @@ class Opf_Parser(object):
                 mtype = tattr.pop("media-type", '')
                 if mtype == "text/html":
                     mtype = "application/xhtml+xml"
-                if mtype not in mime_group_map:
-                    print("****Opf_Parser Warning****: Unknown MediaType: ", mtype)
                 # url decode all relative hrefs since no fragment can be present
                 # meaning no ambiguity in the meaning of any # chars in path
                 if href.find(':') == -1:
@@ -145,30 +145,16 @@ class Opf_Parser(object):
                 overlay = tattr.pop("media-overlay", None)
 
                 # external resources are now allowed in the opf under epub3
-                self.manifest_id_to_href[id] = href
+                self.id_to_href[id] = href
 
                 bookpath = ""
                 if href.find(":") == -1:
                     bookpath = buildBookPath(href, self.opf_dir)
-                self.manifest_id_to_bookpath[id] = bookpath
-                self.manifest_id_to_mime[id] = mtype
-                # self.bookpaths.append(bookpath)
-                group = mime_group_map.get(mtype, '')
-                if bookpath != "" and group != "":
-                    folderlst = self.group_folder.get(group, [])
-                    countlst = self.group_count.get(group, [])
-                    sdir = startingDir(bookpath)
-                    if sdir not in folderlst:
-                        folderlst.append(sdir)
-                        countlst.append(1)
-                    else:
-                        pos = folderlst.index(sdir)
-                        countlst[pos] = countlst[pos] + 1
-                    self.group_folder[group] = folderlst
-                    self.group_count[group] = countlst
-                self.manifest_id_to_properties[id] = properties
-                self.manifest_id_to_fallback[id] = fallback
-                self.manifest_id_to_overlay[id] = overlay
+                self.id_to_bookpath[id] = bookpath
+                self.id_to_mime[id] = mtype
+                self.id_to_properties[id] = properties
+                self.id_to_fallback[id] = fallback
+                self.id_to_overlay[id] = overlay
                 continue
             # spine
             if tname == "spine":
@@ -200,7 +186,7 @@ class Opf_Parser(object):
 
         # determine unique ShortPathName for each bookpath
         # start with filename and work back up the folders
-        # spn = OrderedDict()
+        # spn = {}
         # dupset = set()
         # nameset = {}
         # lvl = 1
@@ -294,7 +280,7 @@ class Opf_Parser(object):
         p = 1
         tname = None
         ttype = None
-        tattr = OrderedDict()
+        tattr = {}
         while p < n and s[p:p + 1] == ' ' : p += 1
         if s[p:p + 1] == '/':
             ttype = 'end'
@@ -403,39 +389,6 @@ class Opf_Parser(object):
     # list of (tname, tattr, tcontent)
     def get_metadata(self):
         return self.metadata
-
-    def get_manifest_id_to_href_dict(self):
-        return self.manifest_id_to_href
-
-    def get_manifest_id_to_mime_dict(self):
-        return self.manifest_id_to_mime
-
-    def get_manifest_id_to_bookpath_dict(self):
-        return self.manifest_id_to_bookpath
-
-    def get_manifest_id_to_properties_dict(self):
-        return self.manifest_id_to_properties
-
-    def get_manifest_id_to_fallback_dict(self):
-        return self.manifest_id_to_fallback
-
-    def get_manifest_id_to_overlay_dict(self):
-        return self.manifest_id_to_overlay
-
-    def get_spine_ppd(self):
-        return self.spine_ppd
-
-    # list of (idref, linear, properties)
-    def get_spine(self):
-        return self.spine
-
-    # list of (type, title, href)
-    def get_guide(self):
-        return self.guide
-
-    # list of (media-type, handler)
-    def get_bindings(self):
-        return self.bindings
 
     def get_group_paths(self):
         return self.group_folder

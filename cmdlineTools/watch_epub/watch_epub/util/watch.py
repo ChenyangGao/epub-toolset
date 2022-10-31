@@ -26,23 +26,29 @@ from watchdog.events import ( # type: ignore
 )
 from watchdog.observers import Observer # type: ignore
 
-from util.hrefutils import buildRelativePath, group_mimes_map
+from util.hrefutils import buildRelativePath
 from util.pathutils import guess_mimetype, relative_path, to_syspath, to_posixpath
 from util.wrapper import Wrapper
 
 
-MIMES_OF_TEXT = group_mimes_map["Text"]
-MIMES_OF_STYLES = group_mimes_map["Styles"]
+MIMES_OF_TEXT = ("text/html", "application/xhtml+xml", "application/x-dtbook+xml")
+MIMES_OF_STYLES = ("text/css",)
 
+#
 CRE_PROT: Final[Pattern] = re_compile(r'^\w+://')
+#
 CRE_REF: Final[Pattern] = re_compile(
     r'(<[^/][^>]*?[\s:](?:href|src)=")(?P<link>[^>"]+)')
+#
 CRE_URL: Final[Pattern] = re_compile(
     r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|'
     r'\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
+#
 CRE_EL_STYLE: Final[Pattern] = re_compile(
     r'<style(?:\s[^>]*|)>((?s:.+?))</style>')
-CRE_INLINE_STYLE: Final[Pattern] = re_compile(r'<[^/][^>]*?\sstyle="([^"]+)"')
+#
+CRE_INLINE_STYLE: Final[Pattern] = re_compile(
+    r'<[^/][^>]*?\sstyle="([^"]+)"')
 
 LOGGER: Final[logging.Logger] = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
@@ -53,8 +59,8 @@ _fmt.datefmt = '%Y-%m-%d %H:%M:%S'
 _sh.setFormatter(_fmt)
 
 
-
 # TODO: 使用策略模式
+# TODO: 应该更新 toc 文件
 def analyze_one(bookpath, data, mime=None):
     """"""
     def gen_filtered_links(links):

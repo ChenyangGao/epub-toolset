@@ -26,6 +26,8 @@ if __name__ == "__main__":
         "如果文件路径不存在，则自动创建一个 EPUB 3 标准的新文件")
     parser.add_argument("-i", "--inplace", action="store_true", help="覆盖原来的文件。"
         "不指定此参数（默认行为）时，会生成一个新文件，而不是覆盖。")
+    parser.add_argument("-d", "--debug", action="store_true", help="启用调试信息。"
+        "如果指定此参数，会将日志级别设置为 DEBUG（否则，默认为 INFO）。")
     args = parser.parse_args()
     if args.epub_path is None:
         parser.parse_args(["-h"])

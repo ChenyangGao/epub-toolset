@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
+# TODO: 对于不能确定mimetype的文件，自动设置成 application/octet-stream
+
 __version__ = (0, 1)
 
 from collections import OrderedDict
@@ -13,14 +15,25 @@ import sys
 import os
 import re
 import posixpath
-from util.hrefutils import urldecodepart, urlencodepart
-from util.hrefutils import buildBookPath, startingDir, buildRelativePath
-from util.hrefutils import mime_group_map
 
-from util.opf_parser import Opf_Parser
+from typing import NamedTuple
+
+from urllib.parse import quote as urlencodepart, unquote as urldecodepart
+from util.hrefutils import buildBookPath, startingDir, buildRelativePath
+
+from util.mimetype import guess_mimetype
+from util.opf_parser import OpfParser
 
 import unicodedata
 
+
+class ManifestItem(NamedTuple):
+    manifest_id: str
+    href: str
+    mimetype: str
+
+
+# TODO: 下面两个函数，需要移除
 def _utf8str(p):
     if p is None:
         return None
@@ -66,7 +79,7 @@ TEXT_MIMETYPES = [
     'application/pls+xml'
 ]
 
-MIMES_OF_TEXT = group_mimes_map["Text"]
+MIMES_OF_TEXT = ("text/html", "application/xhtml+xml", "application/x-dtbook+xml")
 
 def _epub_file_walk(top):
     top = os.fsdecode(top)
@@ -77,27 +90,94 @@ def _epub_file_walk(top):
     return rv
 
 
-def get_opfpath(dir_=""):
-    path = os.path.join(dir_, "META-INF/container.xml")
-    data_container_xml = open(path, "rb").read()
-    tree = fromstring(data_container_xml)
-    opf_bookpath = next(
-        el2.attrib["full-path"]
-        for el1 in tree if el1.tag == "rootfiles" or el1.tag.endswith("}rootfiles")
-        for el2 in el1 if el2.tag == "rootfile" or el2.tag.endswith("}rootfile")
-            if el2.attrib.get("media-type") == "application/oebps-package+xml"
-    )
-    return os.path.join(dir_, opf_bookpath), opf_bookpath
-
 class WrapperException(Exception):
     pass
 
 
-# TODO: Wrapper 改名为 OpfWrapper，继承 OpfParser，并且混入各种方法
-class Wrapper(object):
+def as_startswith(*prefixes):
+    startswith = str.startswith
+    return lambda s: startswith(s, prefixes)
 
-    def __init__(self, ebook_root):
-        self.outdir = self.ebook_root = os.fsdecode(ebook_root)
+def as_equal(other):
+    return lambda self: self == other
+
+
+class OpfIter:
+
+    def manifest_iter(self):
+        # yields manifest id, href, and mimetype
+        for fid, mime in self.id_to_mime.items():
+            href = self.id_to_href[fid]
+            yield ManifestItem(fid, href, mime)
+
+
+    def text_iter(self):
+        # yields manifest id, href in spine order plus any non-spine items
+        text_set = set([k for k, v in self.id_to_mime.items() if v == 'application/xhtml+xml'])
+        for (id, linear, properties) in self.spine:
+            if id in text_set:
+                text_set -= set([id])
+                href = self.id_to_href[id]
+                yield id, href
+        for id in text_set:
+            href = self.id_to_href[id]
+            yield id, href
+
+
+    # New for epub3
+    def manifest_epub3_iter(self):
+        # yields manifest id, href, mimetype, properties, fallback, media-overlay
+        for id in sorted(self.id_to_mime):
+            mime = self.id_to_mime[id]
+            href = self.id_to_href[id]
+            properties = self.id_to_props[id]
+            fallback = self.id_to_fall[id]
+            overlay = self.id_to_over[id]
+            yield id, href, mime, properties, fallback, overlay
+
+    def spine_iter(self):
+        # yields spine idref, linear(yes,no,None), href in spine order
+        for (id, linear, properties) in self.spine:
+            href = self.id_to_href[id]
+            yield id, linear, href
+
+    # New for epub3
+    def spine_epub3_iter(self):
+        # yields spine idref, linear(yes,no,None), properties, href in spine order
+        for (id, linear, properties) in self.spine:
+            href = self.id_to_href[id]
+            yield id, linear, properties, href
+
+    def guide_iter(self):
+        # yields guide reference type, title, href, and manifest id of href
+        for (type, title, href) in self.guide:
+            thref = href.split('#')[0]
+            id = self.href_to_id.get(thref, None)
+            yield type, title, href, id
+
+    # New for epub3
+    def bindings_epub3_iter(self):
+        # yields media-type handler in bindings order
+        for (mtype, handler) in self.bindings:
+            handler_href = self.id_to_href[handler]
+            yield mtype, handler, handler_href
+
+    def selected_iter(self):
+        # yields id type ('other' or 'manifest') and id/otherid for each file selected in the BookBrowser
+        for book_href in self.selected:
+            id_type = 'other'
+            id = book_href
+            if book_href in self.bookpath_to_id:
+                id_type = 'manifest'
+                id = self.bookpath_to_id[book_href]
+            yield id_type, id
+
+
+class OpfWrapper(OpfParser, OpfIter):
+
+    def __init__(self, ebook_root=""):
+        self.ebook_root = os.fsdecode(ebook_root)
+
         opfpath, opfbookpath = get_opfpath(ebook_root)
         self.opfbookpath = opfbookpath
         op = self.op = Opf_Parser(opfpath, opfbookpath)
@@ -131,7 +211,8 @@ class Wrapper(object):
         self.other = []  # non-manifest file information
         self.id_to_filepath = OrderedDict()
         self.book_href_to_filepath = OrderedDict()
-        self.modified = OrderedDict()
+
+        self.modified = {}
         self.added = []
         self.deleted = []
 
@@ -150,10 +231,6 @@ class Wrapper(object):
             else:
                 self.id_to_filepath[id] = filepath
 
-    def getversion(self):
-        global _launcher_version
-        return _launcher_version
-
     def getepubversion(self):
         return self.epub_version
 
@@ -163,13 +240,6 @@ class Wrapper(object):
         href = _unicodestr(href)
         href = urldecodepart(href)
         return mimetypes.guess_type(href)[0]
-
-    # New in Sigil 1.1
-    # ------------------
-
-    # returns color mode of Sigil "light" or "dark"
-    def colorMode(self):
-        return _unicodestr(self.colormode)
 
     # returns color as css or javascript hex color string #xxxxxx
     # Accepts the following color roles "Window", "Base", "Text", "Highlight", "HighlightedText"
@@ -477,7 +547,6 @@ class Wrapper(object):
 
 
     # routines to get and set the guide
-
     def getguide(self):
         return self.guide
 
@@ -591,18 +660,6 @@ class Wrapper(object):
         id = _unicodestr(id)
         return self.id_to_over.get(id, ow)
 
-    # new in Sigil 1.0
-    # returns a sorted folder list for that group
-    # valid groups: Text, Styles, Images, Fonts, Audio, Video, ncx, opf, Misc
-    def map_group_to_folders(self, group, ow):
-        group = _unicodestr(group)
-        return self.group_paths.get(group, ow)
-
-    # new in Sigil 1.0
-    def map_mediatype_to_group(self, mtype, ow):
-        mtype = _unicodestr(mtype)
-        return mime_group_map.get(mtype, ow)
-
     # utility routine to copy entire ebook to a destination directory
     # including the any prior updates and changes to the opf
 
@@ -646,7 +703,7 @@ class Wrapper(object):
                 raise WrapperException('Manifest Id is not unique')
         mime = _unicodestr(mime)
         if mime is None:
-            mime = mimetypes.guess_type(basename)[0]
+            mime = guess_mimetype(basename) or "application/octet-stream"
         if mime is None:
             raise WrapperException("Mime Type Missing")
         if mime == "application/x-dtbncx+xml" and self.epub_version.startswith("2"):
@@ -668,7 +725,7 @@ class Wrapper(object):
 
         # add to spine
         if mime in MIMES_OF_TEXT:
-            self.spine.append((uniqueid, "no", None))
+            self.spine.append((uniqueid, None, None))
 
         return uniqueid, bookpath, mime
 
@@ -722,108 +779,5 @@ class Wrapper(object):
     def deletefile_by_path(self, bookpath):
         id = self.bookpath_to_id[_unicodestr(bookpath)]
         return self.deletefile(id)
-
-# iterators
-
-    def text_iter(self):
-        # yields manifest id, href in spine order plus any non-spine items
-        text_set = set([k for k, v in self.id_to_mime.items() if v == 'application/xhtml+xml'])
-        for (id, linear, properties) in self.spine:
-            if id in text_set:
-                text_set -= set([id])
-                href = self.id_to_href[id]
-                yield id, href
-        for id in text_set:
-            href = self.id_to_href[id]
-            yield id, href
-
-    def css_iter(self):
-        # yields manifest id, href
-        for id in sorted(self.id_to_mime):
-            mime = self.id_to_mime[id]
-            if mime == 'text/css':
-                href = self.id_to_href[id]
-                yield id, href
-
-    def image_iter(self):
-        # yields manifest id, href, and mimetype
-        for id in sorted(self.id_to_mime):
-            mime = self.id_to_mime[id]
-            if mime.startswith('image'):
-                href = self.id_to_href[id]
-                yield id, href, mime
-
-    def font_iter(self):
-        # yields manifest id, href, and mimetype
-        for id in sorted(self.id_to_mime):
-            mime = self.id_to_mime[id]
-            if 'font-' in mime or 'truetype' in mime or 'opentype' in mime or mime.startswith('font/'):
-                href = self.id_to_href[id]
-                yield id, href, mime
-
-    def manifest_iter(self):
-        # yields manifest id, href, and mimetype
-        for id in sorted(self.id_to_mime):
-            mime = self.id_to_mime[id]
-            href = self.id_to_href[id]
-            yield id, href, mime
-
-    # New for epub3
-    def manifest_epub3_iter(self):
-        # yields manifest id, href, mimetype, properties, fallback, media-overlay
-        for id in sorted(self.id_to_mime):
-            mime = self.id_to_mime[id]
-            href = self.id_to_href[id]
-            properties = self.id_to_props[id]
-            fallback = self.id_to_fall[id]
-            overlay = self.id_to_over[id]
-            yield id, href, mime, properties, fallback, overlay
-
-    def spine_iter(self):
-        # yields spine idref, linear(yes,no,None), href in spine order
-        for (id, linear, properties) in self.spine:
-            href = self.id_to_href[id]
-            yield id, linear, href
-
-    # New for epub3
-    def spine_epub3_iter(self):
-        # yields spine idref, linear(yes,no,None), properties, href in spine order
-        for (id, linear, properties) in self.spine:
-            href = self.id_to_href[id]
-            yield id, linear, properties, href
-
-
-    def guide_iter(self):
-        # yields guide reference type, title, href, and manifest id of href
-        for (type, title, href) in self.guide:
-            thref = href.split('#')[0]
-            id = self.href_to_id.get(thref, None)
-            yield type, title, href, id
-
-    # New for epub3
-    def bindings_epub3_iter(self):
-        # yields media-type handler in bindings order
-        for (mtype, handler) in self.bindings:
-            handler_href = self.id_to_href[handler]
-            yield mtype, handler, handler_href
-
-
-    def media_iter(self):
-        # yields manifest, title, href, and manifest id of href
-        for id in sorted(self.id_to_mime):
-            mime = self.id_to_mime[id]
-            if mime.startswith('audio') or mime.startswith('video'):
-                href = self.id_to_href[id]
-                yield id, href, mime
-
-    def selected_iter(self):
-        # yields id type ('other' or 'manifest') and id/otherid for each file selected in the BookBrowser
-        for book_href in self.selected:
-            id_type = 'other'
-            id = book_href
-            if book_href in self.bookpath_to_id:
-                id_type = 'manifest'
-                id = self.bookpath_to_id[book_href]
-            yield id_type, id
 
 

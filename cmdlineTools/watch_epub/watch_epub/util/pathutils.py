@@ -5,15 +5,14 @@ __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
 __version__ = (0, 1)
 __all__ = [
     "openpath", "split", "relative_path", "to_ntpath",  "to_posixpath", 
-    "ntpath_to_syspath", "posixpath_to_syspath", "guess_mimetype", 
+    "ntpath_to_syspath", "posixpath_to_syspath", 
     "path_has_hidden_part", 
 ]
 
 import ntpath
 import posixpath
 
-from mimetypes import guess_type
-from os import fspath, path as syspath, PathLike
+from os import fspath, path as syspath, PathLike, fsdecode
 from types import ModuleType
 from typing import AnyStr, List, Optional, Union
 
@@ -161,8 +160,8 @@ def posixpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         return s.replace(b"/", _sepb)
 
 
-def guess_mimetype(path: Union[str, PathLike[str]]) -> Optional[str]:
-    return guess_type(path)[0]
+def guess_mimetype(path: Union[bytes, str, PathLike]) -> Optional[str]:
+    return guess_type(os.fsdecode(path))[0]
 
 
 def path_has_hidden_part(
