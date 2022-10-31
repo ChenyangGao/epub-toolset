@@ -160,10 +160,6 @@ def posixpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         return s.replace(b"/", _sepb)
 
 
-def guess_mimetype(path: Union[bytes, str, PathLike]) -> Optional[str]:
-    return guess_type(os.fsdecode(path))[0]
-
-
 def path_has_hidden_part(
     path: Union[AnyStr, PathLike[AnyStr]], 
     lib: ModuleType = syspath, 

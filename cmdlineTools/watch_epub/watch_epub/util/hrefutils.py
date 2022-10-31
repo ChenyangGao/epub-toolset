@@ -56,85 +56,69 @@ def longest_common_starting_dir(
 
 # syspath.pardir
 # syspath.curdir
-def split(path: str, sep: str = syspath.sep) -> str:
-    if not path:
-        return [""]
-    withroot = path.startswith(sep)
-    parts = path.split(sep)
-    taildir = parts[-1] in ("", ".", "..")
-    realparts = []
-    for p in path.split(sep):
+def realparts(parts: list[str]) -> list[str]:
+    if not parts or parts == [""]:
+        return parts
+    if all(p == ".." for p in parts):
+        parts.append("")
+        return parts
+    idx = withroot = parts[0] == ""
+    for p in parts[idx:]:
         if p in ("", "."):
             continue
         elif p == "..":
-            if not realparts:
+            if idx == 1:
                 if withroot:
                     raise ValueError
-                else:
-                    realparts.append(p)
-            elif realparts[-1] == "..":
-                realparts.append(p)
+            if idx == 0 or parts[idx-1] == "..":
+                parts[idx] = p
+                idx += 1
             else:
-                realparts.pop()
+                idx -= 1
         else:
-            realparts.append(p)
-    if taildir:
-        realparts.append("")
-    return realparts
+            parts[idx] = p
+            idx += 1
+    if p in ("", ".", ".."):
+        parts[idx] = ""
+        idx += 1
+    del parts[idx:]
+    return parts
 
 
-# 头对齐
-# 尾对齐
-def relativePath(
-    to_bkpath: str,  
-    start_dir: str, 
+def split(path: str, sep: str = syspath.sep) -> str:
+    return realparts(path.split(sep))
+
+
+def relative_path(
+    path: str,  
+    pathto: str, 
     sep: str = syspath.sep, 
 ):
-    dsegs = split(to_bkpath, sep)
-    ssegs = split(start_dir, sep)
+    if path.startswith(sep) ^ pathto.startswith(sep):
+        raise ValueError
+    if path.rstrip(sep) == pathto.rstrip(sep):          return ""
+
+    parts_org = split(path, sep)
+    parts_dst = split(pathto, sep)
 
     i = 0
-    for s1, s2 in zip(dsegs, ssegs):
-        if s1 != s2:
+    for p1, p2 in zip(parts_org, parts_dst):
+        if p1 != p2:
             break
         i += 1
 
-    res = []
-
-    for p in range(i, len(ssegs), 1):
-        res.append('..')
-    for p in range(i, len(dsegs), 1):
-        res.append(dsegs[p])
-    return sep.join(res)
+    return sep.join((
+        *("..",)*(len(parts_org)-i-1),
+        *parts_dst[i:],
+    ))
 
 
-
-def resolveRelativeSegmentsInFilePath(file_path):
-    res = []
-    segs = file_path.split('/')
-    for i in range(len(segs)):
-        if segs[i] == '.': continue
-        if segs[i] == '..':
-            if res:
-                res.pop()
-            else:
-                print("Error resolving relative path segments")
-        else:
-            res.append(segs[i])
-    return '/'.join(res)
-
-
-def buildRelativePath(from_bkpath, to_bkpath):
-    if from_bkpath == to_bkpath:
-        return ""
-    return relativePath(to_bkpath, startingDir(from_bkpath))
-
-
-def buildBookPath(dest_relpath, start_folder):
-    if start_folder == "" or start_folder.strip() == "":
-        return dest_relpath
-    bookpath = start_folder.rstrip('/') + '/' + dest_relpath
-    return resolveRelativeSegmentsInFilePath(bookpath)
-
+def reference_path(path, pathto, sep=syspath.sep):
+    if not path or pathto.startswith(sep):
+        parts = pathto.split(sep)
+    else:
+        parts = path.split(sep)
+        parts[-1:] = pathto.split(sep)
+    return sep.join(realparts(parts))
 
 
