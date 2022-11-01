@@ -13,10 +13,14 @@ decode_url = unquote
 
 
 def parse_url(url: Union[bytes, str]) -> ParseResult:
+    """
+    """
     return urlparse(unquote(href))
 
 
 def unparse_url(url_parse_result: ParseResult) -> str:
+    """
+    """
     return quote(urlunparse(url_parse_result))
 
 
@@ -24,6 +28,8 @@ def starting_dir(
     path: str, 
     sep: str = syspath.sep, 
 ) -> str:
+    """
+    """
     if path.endswith(sep):
         return path
     try:
@@ -36,6 +42,8 @@ def longest_common_starting_dir(
     *paths: str, 
     sep: str = syspath.sep, 
 ) -> str:
+    """
+    """
     if not paths:
         return ""
     elif len(paths) == 1:
@@ -57,6 +65,8 @@ def longest_common_starting_dir(
 # syspath.pardir
 # syspath.curdir
 def realparts(parts: list[str]) -> list[str]:
+    """
+    """
     if not parts or parts == [""]:
         return parts
     if all(p == ".." for p in parts):
@@ -86,6 +96,8 @@ def realparts(parts: list[str]) -> list[str]:
 
 
 def split(path: str, sep: str = syspath.sep) -> str:
+    """
+    """
     return realparts(path.split(sep))
 
 
@@ -96,7 +108,10 @@ def relative_path(
 ):
     if path.startswith(sep) ^ pathto.startswith(sep):
         raise ValueError
-    if path.rstrip(sep) == pathto.rstrip(sep):          return ""
+    if path.rstrip(sep) == pathto.rstrip(sep):
+    """
+    """
+        return ""
 
     parts_org = split(path, sep)
     parts_dst = split(pathto, sep)
@@ -114,6 +129,8 @@ def relative_path(
 
 
 def reference_path(path, pathto, sep=syspath.sep):
+    """
+    """
     if not path or pathto.startswith(sep):
         parts = pathto.split(sep)
     else:

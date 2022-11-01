@@ -29,11 +29,19 @@ def build_short_name(bookpath, lvl):
     pieces = pieces[n - lvl:n]
     return "/".join(pieces)
 
-# TODO: 太复杂了，需要简化
+
+from re import search as re_search
+from urllib.parse import unquote
+
 def get_opf_bookpath(ebook_root=""):
-    path_to_container_xml = syspath.join(topdir, "META-INF/container.xml")
-    tree = fromstring(open(path_to_container_xml, "rb").read())
-    return tree.find('.//*[@media-type="application/oebps-package+xml"]').attrib["full-path"]
+    path_to_container_xml = syspath.join(ebook_root, "META-INF", "container.xml")
+    xml_data = open(path_to_container_xml, "rb").read()
+    match = re_search(b'<rootfile\\s[^>]*media-type="application/oebps-package+xml"][^>]*', xml_data)
+    if match is not None:
+        submatch = re_search(b'\\sfull-path="([^"]+', match[0])
+        if submatch is not None:
+            return unquote(submatch[1])
+    raise ValueError
 
 
 class OpfParser(object):
