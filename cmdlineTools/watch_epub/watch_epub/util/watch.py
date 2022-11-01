@@ -528,6 +528,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             self._update_refby_files(src_bookpath, dest_bookpath, ls_refby)
 
 
+# fsdecode(watchdir)
 def watch(watchdir, wrapper=None):
     "Monitor all events of an epub editing directory, and maintain opf continuously."
     if wrapper is None:

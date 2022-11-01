@@ -18,7 +18,7 @@ import posixpath
 
 from typing import NamedTuple
 
-from urllib.parse import quote as urlencodepart, unquote as urldecodepart
+from urllib.parse import quote, unquote
 from util.hrefutils import buildBookPath, startingDir, buildRelativePath
 
 from util.mimetype import guess_mimetype
@@ -175,11 +175,9 @@ class OpfIter:
 
 class OpfWrapper(OpfParser, OpfIter):
 
-    def __init__(self, ebook_root=""):
-        self.ebook_root = os.fsdecode(ebook_root)
+    def __init__(self, ebook_root: str = ""):
+        super().__init__(ebook_root)
 
-        opfpath, opfbookpath = get_opfpath(ebook_root)
-        self.opfbookpath = opfbookpath
         op = self.op = Opf_Parser(opfpath, opfbookpath)
 
         # dictionaries used to map opf manifest information
