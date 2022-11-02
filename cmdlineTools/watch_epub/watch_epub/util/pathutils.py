@@ -16,6 +16,8 @@ import posixpath
 from os import fspath, path as syspath, PathLike
 from typing import AnyStr, Optional, Union
 
+# TODO: 对于 Windows 的路径，还有驱动器（盘符），所以，下面对于路径的处理，还需要完善一下
+#       借鉴 mingw，C:\转化为/c/
 
 _sep: str = syspath.sep
 _sepb: bytes = syspath.sep.encode()
@@ -398,7 +400,7 @@ def to_syspath(
 def ntpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
     "Replace the path separator `\\` with `os.path.sep` in `path`."
     path_: AnyStr = fspath(path)
-    if isinstance(s, str):
+    if isinstance(path_, str):
         return path_.replace("\\", _sep)
     else:
         return path_.replace(b"\\", _sepb)
@@ -407,7 +409,7 @@ def ntpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
 def posixpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
     "Replace the path separator `/` with `os.path.sep` in `path`."
     path_: AnyStr = fspath(path)
-    if isinstance(s, str):
+    if isinstance(path_, str):
         return path_.replace("/", _sep)
     else:
         return path_.replace(b"/", _sepb)

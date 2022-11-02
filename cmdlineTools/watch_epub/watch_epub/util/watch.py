@@ -1,4 +1,4 @@
- #!/usr/bin/env python
+#!/usr/bin/env python
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
@@ -8,6 +8,8 @@ __all__ = ["watch"]
 # TODO: 移动文件到其他文件夹，那么这个文件所引用的那些文件，相对位置也会改变
 # TODO: created 事件时，文件不存在，则文件可能是被移动或删除，则应该注册一个回调，因为事件没有被正确处理
 # TODO: 是否需要忽略那些所在的祖先目录也是隐藏（以'.'为前缀）的文件？
+# TODO: 对于自己引用自己的，如果写出自己文件名的，要更新，但是如果路径是 ""，则忽略
+# TODO: 应该专门写一个类，用来增删改查文件的引用和被引用关系，解除和 EpubFileEventHandler 的耦合
 
 import logging
 import posixpath
@@ -26,12 +28,12 @@ from watchdog.events import ( # type: ignore
 )
 from watchdog.observers import Observer # type: ignore
 
-from util.hrefutils import buildRelativePath
-from util.pathutils import guess_mimetype, relative_path, to_syspath, to_posixpath
-from util.wrapper import Wrapper
+from util.mimetype import guess_mimetype
+from util.pathutils import reference_path, relative_path, to_syspath, to_posixpath
+from util.opfwrapper import OpfWrapper
 
 
-MIMES_OF_TEXT = ("text/html", "application/xhtml+xml", "application/x-dtbook+xml")
+MIMES_OF_TEXT = ("text/html", "application/xhtml+xml", "application/x-dtbook+xml", "application/x-dtbncx+xml")
 MIMES_OF_STYLES = ("text/css",)
 
 #
@@ -50,17 +52,8 @@ CRE_EL_STYLE: Final[Pattern] = re_compile(
 CRE_INLINE_STYLE: Final[Pattern] = re_compile(
     r'<[^/][^>]*?\sstyle="([^"]+)"')
 
-LOGGER: Final[logging.Logger] = logging.getLogger()
-LOGGER.setLevel(logging.INFO)
-_sh = logging.StreamHandler()
-LOGGER.addHandler(_sh)
-_fmt = logging.Formatter('[%(asctime)s] %(levelname)s ➜ %(message)s')
-_fmt.datefmt = '%Y-%m-%d %H:%M:%S'
-_sh.setFormatter(_fmt)
 
-
-# TODO: 使用策略模式
-# TODO: 应该更新 toc 文件
+# TODO: 使用策略模式，而不是像现在这样一大块
 def analyze_one(bookpath, data, mime=None):
     """"""
     def gen_filtered_links(links):
@@ -68,7 +61,7 @@ def analyze_one(bookpath, data, mime=None):
             link = unquote(link.partition('#')[0])
             if link in ('', '.') or CRE_PROT.match(link) is not None:
                 continue
-            ref_path = relative_path(link, bookpath, lib=posixpath)
+            ref_path = reference_path(bookpath, link, "/")
             yield ref_path
     if mime is None:
         mime = guess_mimetype(bookpath)
@@ -97,13 +90,12 @@ def analyze(wrapper):
     map_path_refset = {}
     map_ref_pathset = defaultdict(set)
 
-    for fid, href, mime in wrapper.manifest_iter():
-        if mime not in MIMES_OF_TEXT or mime not in MIMES_OF_STYLES:
+    for fid, href, mime, *_ in wrapper.manifest_iter():
+        if mime not in MIMES_OF_TEXT and mime not in MIMES_OF_STYLES:
             continue
-
         bookpath = wrapper.id_to_bookpath[fid]
 
-        realpath = syspath.join(wrapper.ebook_root, to_syspath(bookpath, posixpath))
+        realpath = syspath.join(wrapper.ebook_root, to_syspath(bookpath, "/"))
         content = open(realpath, encoding="utf-8").read()
         result = analyze_one(bookpath, content, mime)
         map_path_refset[bookpath] = result
@@ -119,19 +111,19 @@ def analyze(wrapper):
 
 class EpubFileEventHandler(FileSystemEventHandler):
 
-    def __init__(self, watchdir, wrapper=None, logger=LOGGER):
+    def __init__(self, watchdir, wrapper=None, logger=logging):
         super().__init__()
         watchdir = realpath(watchdir)
         if not watchdir.endswith(sep):
             watchdir += sep
         self._watchdir = watchdir
         if wrapper is None:
-            wrapper = Wrapper(watchdir)
+            wrapper = OpfWrapper(watchdir)
         self._wrapper = wrapper
         self._map_path_refset, self._map_ref_pathset = analyze(wrapper)
         self._file_missing = defaultdict(list)
         self._file_mtime = {
-            (p := syspath.join(watchdir, to_syspath(bookpath, posixpath))): 
+            (p := syspath.join(watchdir, to_syspath(bookpath, "/"))): 
                 stat(p).st_mtime_ns
             for bookpath in wrapper.bookpath_to_id
         }
@@ -152,7 +144,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
     def get_path(self, bookpath):
         """"""
-        return syspath.join(self._watchdir, to_syspath(bookpath, posixpath))
+        return syspath.join(self._watchdir, to_syspath(bookpath, "/"))
 
     def get_mime(self, bookpath):
         """"""
@@ -220,7 +212,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             if link in ('', '.') or CRE_PROT.match(link) is not None:
                 return m[0]
 
-            if relative_path(link, refby, lib=posixpath) == bookpath:
+            if reference_path(refby, link, "/") == bookpath:
                 return 'url("%s")' % urlunparse(urlparts._replace(
                     path=quote(rel_ref(refby, dest_bookpath))
                 ))
@@ -233,7 +225,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             link = unquote(urlparts.path)
             if link in ('', '.') or CRE_PROT.match(link) is not None:
                 return m[0]
-            if relative_path(link, refby, lib=posixpath) == bookpath:
+            if reference_path(refby, link, "/") == bookpath:
                 return m[1] + urlunparse(urlparts._replace(
                     path=quote(rel_ref(refby, dest_bookpath))
                 ))
@@ -301,7 +293,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 refby, types = refby
                 if refby == bookpath:
                     refby = dest_bookpath
-                refby_srcpath = self._watchdir + to_syspath(refby, posixpath)
+                refby_srcpath = self._watchdir + to_syspath(refby, "/")
                 try:
                     if stat(refby_srcpath).st_mtime_ns != self._file_mtime[refby_srcpath]:
                         self.logger.error(
@@ -472,7 +464,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 newpath = dest_bookpath
                 fid = wrapper.bookpath_to_id[oldpath]
                 oldhref = wrapper.id_to_href[fid]
-                newhref = buildRelativePath(wrapper.opfbookpath, newpath)
+                newhref = relative_path(wrapper.opf_bookpath, newpath, "/")
                 del wrapper.bookpath_to_id[oldpath]
                 del wrapper.href_to_id[oldhref]
                 wrapper.href_to_id[newhref] = fid
@@ -483,12 +475,20 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 self.wrapper.deletefile_by_path(src_bookpath)
                 self.wrapper.addfile(dest_bookpath)
 
+            # TODO: 下面这一大段，过于混乱，需要重构
             old_mtime = self._file_mtime[src_path]
             self._file_mtime[dest_path] = old_mtime
-            map_path_refset, map_ref_pathset = self._map_path_refset, self._map_ref_pathset
+            # 各个文件引用多少其它文件及次数
+            map_path_refset = self._map_path_refset
+            # 各个文件被那些文件引用
+            map_ref_pathset = self._map_ref_pathset
+            # 我被哪些文件所引用
             pathset = map_ref_pathset.get(src_bookpath)
+            # 我被哪些文件所引用，以及引用的方式
             ls_refby = []
-            if pathset:
+            # map_ref_pathset[src_bookpath] -> map_ref_pathset[dest_bookpath]
+            if pathset is not None:
+                map_ref_pathset[dest_bookpath] = map_ref_pathset.pop(src_bookpath)
                 for p in pathset:
                     result = map_path_refset[p]
                     if type(result) is dict:
@@ -496,6 +496,18 @@ class EpubFileEventHandler(FileSystemEventHandler):
                             (p, [key for key, val in result.items() if src_bookpath in val]))
                     else:
                         ls_refby.append(p)
+            # 我引用的文件
+            refs = map_path_refset[src_bookpath]
+            # src_bookpath in map_ref_pathset[*] -> dest_bookpath in map_ref_pathset[*]
+            if type(refs) is dict:
+                for refs2 in refs.values():
+                    for ref in refs2:
+                        map_ref_pathset[ref].discard(src_bookpath)
+                        map_ref_pathset[ref].add(dest_bookpath)
+            else:
+                for ref in refs:
+                    map_ref_pathset[ref].discard(src_bookpath)
+                    map_ref_pathset[ref].add(dest_bookpath)
 
             result = map_path_refset.get(src_bookpath)
             self._del_bookpath_ref(src_bookpath)
@@ -528,24 +540,24 @@ class EpubFileEventHandler(FileSystemEventHandler):
             self._update_refby_files(src_bookpath, dest_bookpath, ls_refby)
 
 
-# fsdecode(watchdir)
-def watch(watchdir, wrapper=None):
+def watch(watchdir, wrapper=None, logger=logging):
     "Monitor all events of an epub editing directory, and maintain opf continuously."
+    # watchdir = fsdecode(watchdir)
     if wrapper is None:
-        wrapper = Wrapper(watchdir)
+        wrapper = OpfWrapper(watchdir)
     observer = Observer()
-    event_handler = EpubFileEventHandler(watchdir, wrapper)
+    event_handler = EpubFileEventHandler(watchdir, wrapper=wrapper, logger=logger)
     observer.schedule(event_handler, watchdir, recursive=True)
-    LOGGER.info("Watching directory: %r" % watchdir)
+    logger.info("Watching directory: %r" % watchdir)
     observer.start()
     try:
         while True:
             sleep(0.1)
     except KeyboardInterrupt:
-        LOGGER.info('Shutting down watching ...')
+        logger.info('Shutting down watching ...')
         wrapper.write_opf()
     finally:
         observer.stop()
         observer.join()
-    LOGGER.info('Done!')
+    logger.info('Done!')
 

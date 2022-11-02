@@ -23,10 +23,10 @@ if not mimetypes.inited:
     mimetypes.init()
 
 from mimetypes import guess_type
-from os import PathLike
+from os import fsdecode, PathLike
 from typing import Optional, Union
 
 
 def guess_mimetype(path: Union[bytes, str, PathLike]) -> Optional[str]:
-    return guess_type(os.fsdecode(path))[0]
+    return guess_type(fsdecode(path))[0]
 

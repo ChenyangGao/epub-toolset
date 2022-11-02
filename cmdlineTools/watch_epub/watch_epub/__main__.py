@@ -6,6 +6,7 @@ __version__ = (0, 1, 4)
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
+    from util.makeid import TYPE_TO_MAKEID
 
     parser = ArgumentParser(
         formatter_class=RawTextHelpFormatter, 
@@ -28,6 +29,16 @@ if __name__ == "__main__":
         "不指定此参数（默认行为）时，会生成一个新文件，而不是覆盖。")
     parser.add_argument("-d", "--debug", action="store_true", help="启用调试信息。"
         "如果指定此参数，会将日志级别设置为 DEBUG（否则，默认为 INFO）。")
+    parser.add_argument("-m", "--makeid", default="basename", choices=TYPE_TO_MAKEID, 
+    help="""新文件在 OPF 中的 id。
+可选以下值：
+    basename: 文件名（默认）
+    bookpath: 相对于 epub 根目录的相对路径
+    bookhref: 相对于 opf 文件所在目录的相对路径
+    uuid: 4 位 UUID
+    timestamp: 时间戳（单位是秒，值是浮点数）
+    timestamp_ns: 时间戳（单位是纳秒，值是整数）
+""")
     args = parser.parse_args()
     if args.epub_path is None:
         parser.parse_args(["-h"])
@@ -64,7 +75,7 @@ from zipfile import ZipFile
 
 from util.pathutils import openpath
 from util.watch import watch
-from util.wrapper import Wrapper
+from util.opfwrapper import OpfWrapper
 from util.ziputils import zip as makezip
 
 
@@ -126,17 +137,31 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
 
 
 if __name__ == "__main__":
+    from util.makeid import set_makeid
+
+    set_makeid(args.makeid)
+
+    import logging
+
+    LOGGER: logging.Logger = logging.getLogger()
+    LOGGER.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    _sh = logging.StreamHandler()
+    LOGGER.addHandler(_sh)
+    _fmt = logging.Formatter('[%(asctime)s] %(levelname)s ➜ %(message)s')
+    _fmt.datefmt = '%Y-%m-%d %H:%M:%S'
+    _sh.setFormatter(_fmt)
+
     from os import chdir, getcwd
 
     epub_path = args.epub_path
     is_inplace = args.inplace
     with ctx_epub_tempdir(epub_path, is_inplace) as tempdir:
         oldwd = getcwd()
-        wrapper = Wrapper(tempdir)
+        wrapper = OpfWrapper(tempdir)
         chdir(tempdir)
         opf_dir = wrapper.opf_dir
         openpath(opf_dir)
         chdir(opf_dir)
-        watch(tempdir, wrapper)
+        watch(tempdir, wrapper, LOGGER)
         chdir(oldwd) 
 
