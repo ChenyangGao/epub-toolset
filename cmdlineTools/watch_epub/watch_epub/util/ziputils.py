@@ -25,6 +25,7 @@ def zip(path, destpath=None, makerootdir=False, predicate=None, **zipfilekwds):
     if syspath.exists(destpath):
         raise FileExistsError(f"File exists: destpath={destpath!r}")
     path, destpath = syspath.realpath(path), syspath.realpath(destpath)
+    # TODO: 先获取文件列表，然后多线程读取本地文件，先读好的先写入zip，写入加锁
     with ZipFile(destpath, "w", **zipfilekwds) as zf:
         if syspath.isdir(path):
             if makerootdir:

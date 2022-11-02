@@ -10,6 +10,9 @@ __all__ = ["watch"]
 # TODO: 是否需要忽略那些所在的祖先目录也是隐藏（以'.'为前缀）的文件？
 # TODO: 对于自己引用自己的，如果写出自己文件名的，要更新，但是如果路径是 ""，则忽略
 # TODO: 应该专门写一个类，用来增删改查文件的引用和被引用关系，解除和 EpubFileEventHandler 的耦合
+# TODO: 在 windows 下文件被占用时，因为 PermissionError 不可打开，是否需要等会再去尝试打开，以及尝试多少次？
+# TODO: 新增多线程或协程处理机制，加快效率，以及防止主线程崩溃
+# TODO: 对于某些需要同步的文件，由于它们是不规范的，导致崩溃，这时就要跳过
 
 import logging
 import posixpath
@@ -160,6 +163,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
         if mime in MIMES_OF_STYLES or mime in MIMES_OF_TEXT:
             try:
                 realpath = self.get_path(bookpath)
+                # TODO: 在 Windows 下，新增文件过快时，文件还没复制好，就已经去读了，就会报错 PermissionError
                 content = open(realpath, encoding="utf-8").read()
             except FileNotFoundError:
                 # TODO: The file may be deleted or moved, a callback should be registered here, 
@@ -169,7 +173,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             if not result:
                 return
             self._map_path_refset[bookpath] = result
-            if mime in MIMES_OF_TEXT:
+            if mime in MIMES_OF_STYLES:
                 for ref_bookpath in result:
                     self._map_ref_pathset[ref_bookpath].add(bookpath)
             elif mime in MIMES_OF_TEXT:
@@ -180,7 +184,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
     def _del_bookpath_ref(self, bookpath, mime=None):
         if mime is None:
             mime = self.get_mime(bookpath)
-        if mime in MIMES_OF_TEXT:
+        if mime in MIMES_OF_STYLES:
             refset = self._map_path_refset.pop(bookpath, None)
             if refset:
                 for ref in refset:

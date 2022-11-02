@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 4)
+__version__ = (0, 1, 5)
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
@@ -88,7 +88,6 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
             or fnmatch(basename, ".*")
         )
 
-    init: Callable
     need_make_new = not syspath.exists(path)
     if need_make_new:
         def init_dir(dir_):
@@ -118,7 +117,9 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
         stem = basename
     stem = re_sub("_\d{10,}$", "", stem)
 
-    with TemporaryDirectory() as tempdir:
+    td = TemporaryDirectory()
+    try:
+        tempdir = td.name
         init_dir(tempdir)
         yield tempdir
         if need_make_new:
@@ -132,8 +133,12 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
         else:
             target_path = syspath.join(dirname, f"{stem}_{time():.0f}.epub")
         makezip(tempdir, target_path, predicate=filter_filename)
-
         print("Generated file:", target_path)
+    finally:
+        try:
+            td.cleanup()
+        except RecursionError:
+            pass
 
 
 if __name__ == "__main__":
@@ -159,7 +164,9 @@ if __name__ == "__main__":
         oldwd = getcwd()
         wrapper = OpfWrapper(tempdir)
         chdir(tempdir)
-        opf_dir = wrapper.opf_dir
+        opf_dir = wrapper.get_path(wrapper.opf_dir)
+        if not opf_dir:
+            opf_dir = "."
         openpath(opf_dir)
         chdir(opf_dir)
         watch(tempdir, wrapper, LOGGER)

@@ -222,7 +222,8 @@ class OpfWrapper(OpfParser, OpfIter):
         href = _unicodestr(href)
         href = unquote(href)
         starting_dir = _unicodestr(starting_dir)
-        starting_dir += "/"
+        if starting_dir:
+            starting_dir += "/"
         return reference_path(starting_dir, href, "/")
 
     # returns the href relative path from source bookpath to target bookpath

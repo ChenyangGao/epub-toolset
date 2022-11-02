@@ -43,7 +43,8 @@ class OpfParser:
         self.opf_bookpath = opf_bookpath = get_opf_bookpath(ebook_root)
         self.opf_path = opf_path = self.get_path(opf_bookpath)
         self.opf_dir, self.opf_name = posixpath.split(opf_bookpath)
-        self.opf_dir += "/"
+        if self.opf_dir:
+            self.opf_dir += "/"
         self.opf = open(opf_path, "r", encoding="utf-8").read()
 
         self.opos = 0
