@@ -3,10 +3,10 @@
 <name>reNumberNotes</name>
 <type>edit</type>
 <author>ChenyangGao(https://chenyanggao.github.io/)</author>
-<description>把位于同一页面的脚注进行重新编号</description>
+<description>脚注编号|元素文本节点替换</description>
 <engine>python3.4</engine>
-<version>0.0.4</version>
+<version>0.0.5</version>
 <autostart>true</autostart>
-<autoclose>true</autoclose>
-<oslist>osx,win,unx</oslist>
+<autoclose>false</autoclose>
+<oslist>osx,unx,win</oslist>
 </plugin>

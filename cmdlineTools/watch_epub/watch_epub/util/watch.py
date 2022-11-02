@@ -349,7 +349,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         """"""
-        src_path = event.src_path
+        src_path = realpath(event.src_path)
         self._file_missing.pop(src_path, None)
 
         bookpath = self.get_bookpath(src_path)
@@ -373,7 +373,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         """"""
-        src_path = event.src_path
+        src_path = realpath(event.src_path)
         self._file_missing.pop(src_path, None)
 
         logger = self.logger
@@ -403,7 +403,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
         """"""
         # NOTE: When a file is modified, two modified events will be triggered, 
         #       the first is truncation, and the second is writing.
-        src_path = event.src_path
+        src_path = realpath(event.src_path)
         bookpath = self.get_bookpath(src_path)
 
         if event.is_directory:
@@ -435,7 +435,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
     def on_moved(self, event):
         """"""
-        src_path, dest_path = event.src_path, event.dest_path
+        src_path, dest_path = realpath(event.src_path), realpath(event.dest_path)
         src_bookpath = self.get_bookpath(src_path)
         dest_bookpath = self.get_bookpath(dest_path)
 
