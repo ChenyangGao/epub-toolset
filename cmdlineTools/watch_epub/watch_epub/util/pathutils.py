@@ -18,6 +18,8 @@ from typing import AnyStr, Optional, Union
 
 # TODO: 对于 Windows 的路径，还有驱动器（盘符），所以，下面对于路径的处理，还需要完善一下
 #       借鉴 mingw，C:\转化为/c/
+# TODO: 去除sep参数 写nt和posix两种版本 以及不带前缀的版本(自动识别要用哪个函数) 
+
 
 _sep: str = syspath.sep
 _sepb: bytes = syspath.sep.encode()
@@ -361,6 +363,7 @@ def to_ntpath(
         return path_.replace(realsep, b"\\")
 
 
+# change path separator
 def to_posixpath(
     path: Union[AnyStr, PathLike[AnyStr]], 
     sep: Optional[AnyStr] = None, 
@@ -406,6 +409,48 @@ def ntpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         return path_.replace(b"\\", _sepb)
 
 
+
+# \/:*?"<>|
+# windows \/ -> posix /
+# if \:*?"<>| in posix path, raise ValueError 
+
+# os.path.commonpath, commonprefix, 
+# path.relpath
+# path.normpath
+
+
+def nt_validate(path):
+    # (drive:[\\/])?([\\/:*?"<>|]+[\\/])*[\\/:*?"<>|]+
+
+
+cre_ntsep = re_compile("\\/")
+cre_ntsepb = re_compile(b"\\/")
+
+# import nturl2path
+
+# nturl2path.pathname2url
+def path_nt_to_posix(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    path_ = fspath(path)
+    # isabs
+    //path -> \\path
+    /drive/path -> drive/path
+    path/ -> path\\
+    if isinstance(path_, str):
+        newsep = "\\"
+        cre_oldsep = cre_ntsep
+    else:
+        newsep = b"/"
+        cre_oldsep = cre_ntsepb
+    parts = cre_oldsep.split(path_)
+
+
+# nturl2path.url2pathname
+def path_posix_to_nt():
+
+
+# how to process ntpath drive?
+# how to process chars na in nt?
+# ntpath ignore case
 def posixpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
     "Replace the path separator `/` with `os.path.sep` in `path`."
     path_: AnyStr = fspath(path)
