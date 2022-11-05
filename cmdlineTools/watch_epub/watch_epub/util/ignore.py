@@ -13,14 +13,21 @@ from re import compile as re_compile, escape as re_escape, Match, Pattern
 from typing import AnyStr, Callable, Final, Sequence
 
 
-cre_stars: Final[Pattern] = re_compile("\*{2,}")
-cre_magic_check: Final[Pattern] = re_compile("([*?[])")
-creb_magic_check: Final[Pattern] = re_compile(b"([*?[])")
-cre_magic_group: Final[Pattern] = re_compile(
-    r"(?P<chars>\*)"           # *
-    r"|(?P<char>\?)"           # ?
-    r"|(?P<exs>\[[!^][^]]+\])" # [^...] or [!...]
-    r"|(?P<ins>\[[^]]+\])"     # [...]
+cre_stars: Final[Pattern[str]] = re_compile("\*{2,}")
+creb_stars: Final[Pattern[bytes]] = re_compile(b"\*{2,}")
+cre_magic_check: Final[Pattern[str]] = re_compile("([*?[])")
+creb_magic_check: Final[Pattern[bytes]] = re_compile(b"([*?[])")
+cre_magic_group: Final[Pattern[str]] = re_compile(
+    r"(?P<chars>\*)"           # '*'
+    r"|(?P<char>\?)"           # '?'
+    r"|(?P<exs>\[[!^][^]]+\])" # '[^...]' or '[!...]'
+    r"|(?P<ins>\[[^]]+\])"     # '[...]'
+)
+creb_magic_group: Final[Pattern[bytes]] = re_compile(
+    br"(?P<chars>\*)"           # b'*'
+    br"|(?P<char>\?)"           # b'?'
+    br"|(?P<exs>\[[!^][^]]+\])" # b'[^...]' or b'[!...]'
+    br"|(?P<ins>\[[^]]+\])"     # b'[...]'
 )
 
 
@@ -52,16 +59,16 @@ def _translate_magic_group(m: Match[AnyStr]) -> AnyStr:
                 raise NotImplementedError
     else:
         match m.lastgroup:
-            case b"ins":
+            case "ins":
                 return b"(?!/)" + s
-            case b"exs":
+            case "exs":
                 if s.startswith(b"[!"):
                     return b"(?!/)" + b"[^" + s[2:]
                 else:
                     return b"(?!/)" + s
-            case b"char":
+            case "char":
                 return b"[^/]"
-            case b"chars":
+            case "chars":
                 return b"[^/]*?"
             case _:
                 raise NotImplementedError
@@ -84,6 +91,8 @@ def translate(pat: AnyStr) -> AnyStr:
         star2 = "**"
         star2_to_v1 = "(?:[^/]*/)*"
         star2_to_v2 = "[\s\S]*"
+        cre_stars_ = cre_stars
+        cre_magic_group_ = cre_magic_group
     else:
         sep = b"/"
         empty = b""
@@ -91,6 +100,8 @@ def translate(pat: AnyStr) -> AnyStr:
         star2 = b"**"
         star2_to_v1 = b"(?:[^/]*/)*"
         star2_to_v2 = b"[\s\S]*"
+        cre_stars_ = creb_stars
+        cre_magic_group_ = creb_magic_group
     parts = pat.split(sep)
     # p -> **/p, p/ -> **/p/
     match parts:
@@ -103,16 +114,16 @@ def translate(pat: AnyStr) -> AnyStr:
     prev = empty
     n = len(parts)
     for i, p in enumerate(parts, 1):
-        if cre_stars.fullmatch(p):
+        if cre_stars_.fullmatch(p):
             p = star2
             if prev != star2:
                 parts_append(star2_to_v1)
         elif p:
-            p = cre_stars.sub(star, p)
+            p = cre_stars_.sub(star, p)
             ls: list[AnyStr] = []
             ls_append = ls.append
             start = 0
-            for m in cre_magic_group.finditer(p):
+            for m in cre_magic_group_.finditer(p):
                 ls_append(re_escape(p[start:m.start()]))
                 ls_append(_translate_magic_group(m))
                 start = m.end()
@@ -132,8 +143,13 @@ def make_ignore(
 ) -> Callable[[AnyStr], bool]:
     ""
     re_pat: AnyStr
+    not_: AnyStr
+    if isinstance(pat, str):
+        not_ = "!"
+    else:
+        not_ = b"!"
     def get_ignore(pat: AnyStr) -> Callable[[AnyStr], bool]:
-        if pat.startswith("!"):
+        if pat.startswith(not_):
             match = re_compile(translate(pat[1:])).fullmatch
             return lambda path: match(path) is None
         else:
@@ -156,6 +172,7 @@ def ignore(
         See: https://git-scm.com/docs/gitignore#_pattern_format
 
     Examples::
+        # test str cases
         >>> ignore("hello.*", "hello.py")
         True
         >>> ignore("hello.*", "foo/hello.py")
@@ -195,6 +212,48 @@ def ignore(
         >>> not ignore("h[!a-g]llo.py", "hello.py")
         True
         >>> not ignore("!hello.py", "hello.py")
+        True
+
+        # test bytes cases
+        >>> ignore(b"hello.*", b"hello.py")
+        True
+        >>> ignore(b"hello.*", b"foo/hello.py")
+        True
+        >>> ignore(b"/hello.*", b"hello.py")
+        True
+        >>> not ignore(b"/hello.*", b"foo/hello.py")
+        True
+        >>> not ignore(b"foo/", b"foo")
+        True
+        >>> ignore(b"foo/", b"foo/")
+        True
+        >>> ignore(b"foo/", b"bar/foo/")
+        True
+        >>> not ignore(b"foo/", b"bar/foo")
+        True
+        >>> ignore(b"foo/", b"bar/foo/baz")
+        True
+        >>> ignore(b"/foo/", b"foo/")
+        True
+        >>> not ignore(b"/foo/", b"bar/foo/")
+        True
+        >>> ignore(b"foo/*", b"foo/hello.py")
+        True
+        >>> not ignore(b"foo/*", b"bar/foo/hello.py")
+        True
+        >>> ignore(b"foo/**/bar/hello.py", b"foo/bar/hello.py")
+        True
+        >>> ignore(b"foo/**/bar/hello.py", b"foo/fop/foq/bar/hello.py")
+        True
+        >>> ignore(b"h?llo.py", b"hello.py")
+        True
+        >>> ignore(b"h[a-g]llo.py", b"hello.py")
+        True
+        >>> not ignore(b"h[^a-g]llo.py", b"hello.py")
+        True
+        >>> not ignore(b"h[!a-g]llo.py", b"hello.py")
+        True
+        >>> not ignore(b"!hello.py", b"hello.py")
         True
     """
     if callable(pats):
