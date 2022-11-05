@@ -14,11 +14,11 @@ Other important functions:
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
 __version__ = (0, 4)
 __all__ = [
-    "openpath", "starting_dir", "longest_common_dir", "split", "clean_parts", 
-    "normalize_ntpath", "normalize_posixpath", "normalize_path", "relative_path", 
-    "reference_path", "path_posix_to_nt", "path_nt_to_posix", "path_to_nt", 
-    "path_to_posix", "path_nt_to_sys", "path_posix_to_sys", "path_nt_to_url", 
-    "path_url_to_nt", 
+    "openpath", "starting_dir", "longest_common_dir", "split", "separate", 
+    "clean_parts", "normalize_ntpath", "normalize_posixpath", "normalize_path", 
+    "relative_path", "reference_path", "path_posix_to_nt", "path_nt_to_posix", 
+    "path_to_nt", "path_to_posix", "path_nt_to_sys", "path_posix_to_sys", 
+    "path_nt_to_url", "path_url_to_nt", 
 ]
 
 import os.path as syspath
@@ -28,24 +28,24 @@ import posixpath
 from nturl2path import pathname2url as path_nt_to_url, url2pathname as path_url_to_nt
 from os import fspath, PathLike
 from re import compile as re_compile, Pattern
-from typing import cast, AnyStr, Optional, Union
+from typing import cast, AnyStr, Final, Optional, Union
 
 
-cre_nt_seps = re_compile(r"[\\/]")
-creb_nt_seps = re_compile(br"[\\/]")
-cre_nt_name_na_chars = re_compile(r'\\:*?"<>|')
-creb_nt_name_na_chars = re_compile(br'\\:*?"<>|')
-cre_nt_name_na_chars_all = re_compile(r'/\\:*?"<>|')
-creb_nt_name_na_chars_all = re_compile(br'/\\:*?"<>|')
-cre_nt_drive = re_compile(r'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
-creb_nt_drive = re_compile(br'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
+cre_nt_seps: Final[Pattern[str]] = re_compile(r"[\\/]")
+creb_nt_seps: Final[Pattern[bytes]] = re_compile(br"[\\/]")
+cre_nt_name_na_chars: Final[Pattern[str]] = re_compile(r'\\:*?"<>|')
+creb_nt_name_na_chars: Final[Pattern[bytes]] = re_compile(br'\\:*?"<>|')
+cre_nt_name_na_chars_all: Final[Pattern[str]] = re_compile(r'/\\:*?"<>|')
+creb_nt_name_na_chars_all: Final[Pattern[bytes]] = re_compile(br'/\\:*?"<>|')
+cre_nt_drive: Final[Pattern[str]] = re_compile(r'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
+creb_nt_drive: Final[Pattern[bytes]] = re_compile(br'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
 
-ntsep: str = "\\"
-ntsepb: bytes = b"\\"
-posixsep: str = "/"
-posixsepb: bytes = b"/"
-syssep: str
-syssepb: bytes
+ntsep: Final[str] = "\\"
+ntsepb: Final[bytes] = b"\\"
+posixsep: Final[str] = "/"
+posixsepb: Final[bytes] = b"/"
+syssep: Final[str]
+syssepb: Final[bytes]
 if syspath is ntpath:
     syssep, syssepb = ntsep, ntsepb
 else:
@@ -55,7 +55,7 @@ else:
 try:
     _startfile = __import__("os").startfile
 
-    def openpath(path: Union[str, PathLike]) -> None:
+    def openpath(path: str | PathLike) -> None:
         "Open a file or directory (For Windows)"
         _startfile(path)
 except AttributeError:
@@ -64,21 +64,21 @@ except AttributeError:
     _PLATFROM_SYSTEM: str = __import__("platform").system()
 
     if _PLATFROM_SYSTEM == "Linux":
-        def openpath(path: Union[str, PathLike]) -> None:
+        def openpath(path: str | PathLike) -> None:
             "Open a file or directory (For Linux)"
             _Popen(["xdg-open", fspath(path)])
     elif _PLATFROM_SYSTEM == "Darwin":
-        def openpath(path: Union[str, PathLike]) -> None:
+        def openpath(path: str | PathLike) -> None:
             "Open a file or directory (For Mac OS X)"
             _Popen(["open", fspath(path)])
     else:
-        def openpath(path: Union[str, PathLike]) -> None:
+        def openpath(path: str | PathLike) -> None:
             "Issue an error: can not open the path."
             raise NotImplementedError("Can't open the path %r" % fspath(path))
 
 
 def starting_dir(
-    path: Union[AnyStr, PathLike[AnyStr]], 
+    path: AnyStr | PathLike[AnyStr], 
     sep: Optional[AnyStr] = None, 
 ) -> AnyStr:
     """Return the starting directory of `path`.
@@ -114,8 +114,8 @@ def starting_dir(
 
 
 def longest_common_dir(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    *paths: Union[AnyStr, PathLike[AnyStr]], 
+    path: AnyStr | PathLike[AnyStr], 
+    *paths: AnyStr | PathLike[AnyStr], 
     sep: Optional[AnyStr] = None, 
 ) -> AnyStr:
     """Return the longest common directory.
@@ -161,9 +161,57 @@ def longest_common_dir(
     return p1[:lastest_index]
 
 
+def separate(
+    path: AnyStr | PathLike[AnyStr], 
+    sep: None | AnyStr | Pattern[AnyStr] = None, 
+    maxsplit: int = -1, 
+    from_left: bool = False, 
+) -> list[AnyStr]:
+    ""
+    path_ = fspath(path)
+
+    if isinstance(sep, Pattern):
+        if maxsplit == 0:
+            return [path_]
+        else:
+            ls_pos = [m.end() for m in sep.finditer(path_)]
+            if maxsplit > 0:
+                if from_left:
+                    ls_pos = ls_pos[:maxsplit]
+                else:
+                    ls_pos = ls_pos[-maxsplit:]
+            parts = []
+            start = 0
+            for stop in ls_pos:
+                parts.append(path_[start:stop])
+                start = stop
+            parts.append(path_[start:])
+            return parts
+    else:
+        realsep: AnyStr
+        if sep is None:
+            if isinstance(path_, str):
+                realsep = syssep
+            else:
+                realsep = syssepb
+        else:
+            realsep = sep
+
+        if from_left:
+            parts = path_.split(realsep, maxsplit)
+        else:
+            parts = path_.rsplit(realsep, maxsplit)
+
+        if len(parts) > 1:
+            for i, p in enumerate(parts[:-1]):
+                parts[i] += realsep
+
+        return parts
+
+
 def split(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    sep: Union[None, AnyStr, Pattern[AnyStr]] = None, 
+    path: AnyStr | PathLike[AnyStr], 
+    sep: None | AnyStr | Pattern[AnyStr] = None, 
     maxsplit: int = -1, 
     from_left: bool = False, 
 ) -> list[AnyStr]:
@@ -269,7 +317,7 @@ def clean_parts(parts: list[AnyStr]) -> list[AnyStr]:
     return parts
 
 
-def normalize_ntpath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def normalize_ntpath(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     path_: AnyStr = fspath(path)
     drive: AnyStr
@@ -280,7 +328,7 @@ def normalize_ntpath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         return drive + ntsepb.join(clean_parts(split(path_, creb_nt_seps)))
 
 
-def normalize_posixpath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def normalize_posixpath(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     path_: AnyStr = fspath(path)
     if isinstance(path_, str):
@@ -289,7 +337,7 @@ def normalize_posixpath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         return posixsepb.join(clean_parts(split(path_, posixsepb)))
 
 
-def normalize_path(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def normalize_path(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     if syspath is ntpath:
         return normalize_ntpath(path)
@@ -300,8 +348,8 @@ def normalize_path(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
 
 
 def relative_path(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    pathto: Union[AnyStr, PathLike[AnyStr]], 
+    path: AnyStr | PathLike[AnyStr], 
+    pathto: AnyStr | PathLike[AnyStr], 
     sep: Optional[AnyStr] = None, 
 ) -> AnyStr:
     """Return the relative path from `path` to `pathto`.
@@ -364,8 +412,8 @@ def relative_path(
 
 
 def reference_path(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    pathto: Union[AnyStr, PathLike[AnyStr]], 
+    path: AnyStr | PathLike[AnyStr], 
+    pathto: AnyStr | PathLike[AnyStr], 
     sep: Optional[AnyStr] = None, 
 ) -> AnyStr:
     """Return the reference path from `path` to `pathto`.
@@ -403,7 +451,7 @@ def reference_path(
     return realsep.join(clean_parts(parts))
 
 
-def path_posix_to_nt(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def path_posix_to_nt(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     path_: AnyStr = fspath(path)
     drive: AnyStr
@@ -429,7 +477,7 @@ def path_posix_to_nt(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         return drive + path_.replace(posixsepb, ntsepb)
 
 
-def path_nt_to_posix(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def path_nt_to_posix(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     path_: AnyStr = fspath(path)
     drive: AnyStr
@@ -442,7 +490,7 @@ def path_nt_to_posix(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         return prefix + path_.replace(ntsepb, posixsepb)
 
 
-def path_to_nt(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def path_to_nt(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     if syspath is ntpath:
         return fspath(path)
@@ -452,7 +500,7 @@ def path_to_nt(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         raise NotImplementedError
 
 
-def path_to_posix(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def path_to_posix(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     if syspath is posixpath:
         return fspath(path)
@@ -462,7 +510,7 @@ def path_to_posix(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         raise NotImplementedError
 
 
-def path_nt_to_sys(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def path_nt_to_sys(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     if syspath is ntpath:
         return fspath(path)
@@ -472,7 +520,7 @@ def path_nt_to_sys(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
         raise NotImplementedError
 
 
-def path_posix_to_sys(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+def path_posix_to_sys(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
     ""
     if syspath is posixpath:
         return fspath(path)

@@ -115,7 +115,7 @@ def analyze(wrapper):
 
 class EpubFileEventHandler(FileSystemEventHandler):
 
-    def __init__(self, watchdir, wrapper=None, logger=logging):
+    def __init__(self, watchdir, wrapper=None, logger=logging, ignore=None):
         super().__init__()
         watchdir = realpath(watchdir)
         if not watchdir.endswith(sep):
@@ -132,6 +132,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
             for bookpath in wrapper.bookpath_to_id
         }
         self.logger = logger
+        self.ignore = ignore
 
     @property
     def watchdir(self):
@@ -545,13 +546,14 @@ class EpubFileEventHandler(FileSystemEventHandler):
             self._update_refby_files(src_bookpath, dest_bookpath, ls_refby)
 
 
-def watch(watchdir, wrapper=None, logger=logging):
+def watch(watchdir, wrapper=None, logger=logging, ignore=None):
     "Monitor all events of an epub editing directory, and maintain opf continuously."
     # watchdir = fsdecode(watchdir)
     if wrapper is None:
         wrapper = OpfWrapper(watchdir)
     observer = Observer()
-    event_handler = EpubFileEventHandler(watchdir, wrapper=wrapper, logger=logger)
+    event_handler = EpubFileEventHandler(
+        watchdir, wrapper=wrapper, logger=logger, ignore=ignore)
     observer.schedule(event_handler, watchdir, recursive=True)
     logger.info("Watching directory: %r" % watchdir)
     observer.start()

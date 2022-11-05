@@ -11,10 +11,11 @@ from functools import update_wrapper
 from os import urandom
 from posixpath import basename
 from time import time, time_ns
+from typing import Callable
 from uuid import uuid4
 
 
-TYPE_TO_MAKEID = {}
+TYPE_TO_MAKEID: dict[str, Callable] = {}
 
 _countfrom0 = count(0)
 _countfrom1 = count(1)

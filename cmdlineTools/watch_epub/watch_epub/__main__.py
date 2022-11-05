@@ -51,8 +51,8 @@ if __name__ == "__main__":
 
 import sys
 
-if sys.version_info < (3, 8):
-    raise SystemExit("Python 版本不得低于 3.8，你的版本是\n%s" % sys.version)
+if sys.version_info < (3, 10):
+    raise SystemExit("Python 版本不得低于 3.10，你的版本是\n%s" % sys.version)
 
 def ensure_module(
     module, 
@@ -98,14 +98,7 @@ from util.ziputils import zip as makezip
 IGNORES = (".DS_store", "Thumb.store", "desktop.ini", "._*")
 
 @contextmanager
-def ctx_epub_tempdir(path: str, is_inplace: bool = False):
-    def filter_filename(srcpath, _):
-        basename = syspath.basename(srcpath)
-        return not (
-            basename in IGNORES
-            or fnmatch(basename, ".*")
-        )
-
+def ctx_epub_tempdir(path: str, is_inplace: bool = False, ignore = None):
     need_make_new = not syspath.exists(path)
     if need_make_new:
         def init_dir(dir_):
@@ -152,7 +145,7 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
             target_path = syspath.join(dirname, "%s_%.0f.epub" % (stem, time_ns()))
         while True:
             try:
-                makezip(tempdir, target_path, predicate=filter_filename)
+                makezip(tempdir, target_path, ignore=ignore)
                 print("Generated file:", target_path)
                 break
             except (PermissionError, FileNotFoundError, FileExistsError) as exc:
@@ -190,7 +183,16 @@ if __name__ == "__main__":
 
     epub_path = args.epub_path
     is_inplace = args.inplace
-    with ctx_epub_tempdir(epub_path, is_inplace) as tempdir:
+
+    from util.ignore import make_ignore
+
+    ignore = make_ignore(IGNORES)
+
+    with ctx_epub_tempdir(
+        epub_path, 
+        is_inplace=is_inplace, 
+        ignore=ignore, 
+    ) as tempdir:
         oldwd = getcwd()
         wrapper = OpfWrapper(tempdir)
         chdir(tempdir)
@@ -199,6 +201,6 @@ if __name__ == "__main__":
             opf_dir = "."
         openpath(opf_dir)
         chdir(opf_dir)
-        watch(tempdir, wrapper, LOGGER)
+        watch(tempdir, wrapper=wrapper, logger=logger, ignore=ignore)
         chdir(oldwd) 
 

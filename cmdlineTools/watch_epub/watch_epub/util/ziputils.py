@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1)
+__version__ = (0, 0, 1)
 __all__ = ["zip", "unzip", "filter_zip_file"]
 
 
@@ -12,11 +12,12 @@ import os.path as syspath
 from os import makedirs, walk
 from zipfile import ZipFile
 
+from util.pathutils import path_to_posix
 
 # OR you can use shutil.make_archive
 # shutil.get_archive_formats() 可以查看支持的格式
 # shutil.make_archive(target_path, 'zip', source_path)
-def zip(path, destpath=None, makerootdir=False, predicate=None, **zipfilekwds):
+def zip(path, destpath=None, makerootdir=False, ignore=None, **zipfilekwds):
     if not syspath.exists(path):
         raise FileNotFoundError(
             f"No such file or directory: path={path!r}")
@@ -27,19 +28,19 @@ def zip(path, destpath=None, makerootdir=False, predicate=None, **zipfilekwds):
     if syspath.exists(destpath):
         raise FileExistsError(f"File exists: destpath={destpath!r}")
     path, destpath = syspath.realpath(path), syspath.realpath(destpath)
-    # TODO: 先获取文件列表，然后多线程读取本地文件，先读好的先写入zip，写入加锁
+    # TODO: 先获取文件列表，然后多线程读取本地文件，先读好的再写入zip（ZipFile.writestr），写入加锁
     with ZipFile(destpath, "w", **zipfilekwds) as zf:
         if syspath.isdir(path):
             if makerootdir:
-                relative_index = len(syspath.dirname(path))
+                rel_index = len(syspath.dirname(path))
             else:
-                relative_index = len(path)
+                rel_index = len(path)
             for dirpath, _, filenames in walk(path):
-                fpath = dirpath[relative_index:]
+                fpath = dirpath[rel_index:]
                 for filename in filenames:
                     src = syspath.join(dirpath, filename)
-                    tgt = syspath.join(fpath, filename)
-                    if not predicate or predicate(src, tgt):
+                    tgt = path_to_posix(syspath.join(fpath, filename))
+                    if not ignore or ignore(tgt):
                         zf.write(src, tgt)
         else:
             zf.write(path, syspath.basename(path))
