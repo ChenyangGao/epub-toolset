@@ -15,11 +15,12 @@ __all__ = ["watch"]
 # TODO: 对于某些需要同步的文件，由于它们是不规范的，导致崩溃，这时就要跳过
 
 import logging
+import os.path as syspath
 import posixpath
 
 from collections import defaultdict, Counter
 from functools import partial
-from os import path as syspath, stat
+from os import stat
 from os.path import basename, dirname, realpath, sep
 from re import compile as re_compile, Pattern
 from time import sleep
@@ -32,11 +33,11 @@ from watchdog.events import ( # type: ignore
 from watchdog.observers import Observer # type: ignore
 
 from util.mimetype import guess_mimetype
-from util.pathutils import reference_path, relative_path, to_syspath, to_posixpath
+from util.pathutils import reference_path, relative_path, path_posix_to_sys, path_to_posix
 from util.opfwrapper import OpfWrapper
 
 
-MIMES_OF_TEXT = ("text/html", "application/xhtml+xml", "application/x-dtbook+xml", "application/x-dtbncx+xml")
+MIMES_OF_TEXT = ("text/html", "application/xhtml+xml", "application/x-dtbncx+xml")
 MIMES_OF_STYLES = ("text/css",)
 
 #
@@ -98,7 +99,7 @@ def analyze(wrapper):
             continue
         bookpath = wrapper.id_to_bookpath[fid]
 
-        realpath = syspath.join(wrapper.ebook_root, to_syspath(bookpath, "/"))
+        realpath = syspath.join(wrapper.ebook_root, path_posix_to_sys(bookpath))
         content = open(realpath, encoding="utf-8").read()
         result = analyze_one(bookpath, content, mime)
         map_path_refset[bookpath] = result
@@ -126,7 +127,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
         self._map_path_refset, self._map_ref_pathset = analyze(wrapper)
         self._file_missing = defaultdict(list)
         self._file_mtime = {
-            (p := syspath.join(watchdir, to_syspath(bookpath, "/"))): 
+            (p := syspath.join(watchdir, path_posix_to_sys(bookpath))): 
                 stat(p).st_mtime_ns
             for bookpath in wrapper.bookpath_to_id
         }
@@ -143,11 +144,11 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
     def get_bookpath(self, path):
         """"""
-        return to_posixpath(realpath(path)[len(self._watchdir):])
+        return path_to_posix(realpath(path)[len(self._watchdir):])
 
     def get_path(self, bookpath):
         """"""
-        return syspath.join(self._watchdir, to_syspath(bookpath, "/"))
+        return syspath.join(self._watchdir, path_posix_to_sys(bookpath))
 
     def get_mime(self, bookpath):
         """"""
@@ -297,7 +298,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 refby, types = refby
                 if refby == bookpath:
                     refby = dest_bookpath
-                refby_srcpath = self._watchdir + to_syspath(refby, "/")
+                refby_srcpath = self._watchdir + path_posix_to_sys(refby)
                 try:
                     if stat(refby_srcpath).st_mtime_ns != self._file_mtime[refby_srcpath]:
                         self.logger.error(

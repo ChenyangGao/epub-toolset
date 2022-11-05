@@ -10,35 +10,41 @@ if __name__ == "__main__":
 
     parser = ArgumentParser(
         formatter_class=RawTextHelpFormatter, 
-        description="""🫡 编辑 EPUB 文件等于编辑它的解压后文件夹 🥳
+        description="""😄 编辑 EPUB 等于编辑它的解压后文件夹 🥳
 
 【简介】
-程序会自动把指定的 EPUB 解压到临时文件夹，然后持续监控这个文件夹中的变化，包括这些事件：
-    1. 新增文件 
-    2. 删除文件 
-    3. 改动文件名 
-    4. 改动文件内容
-，上面这些变动，会被实时同步到 opf 文件中，另外如果是改动文件名，就会导致引用它的位置发生改变，
-😊 不用担心，这也会被自动跟进。
-启动程序后，不要关闭命令行窗口（除非你并不想保留修改）。
-🚀 当你想结束编辑时，在刚才打开的命令行窗口，输入 Ctrl+C ，程序就可以被正常终止了。
-正常结束的程序，会生成一个改动后的 EPUB 文件。""")
+程序会自动把指定的 EPUB 解压到临时文件夹，然后持续监控这个文件夹中的变化，并实时同步到 opf 文件中。
+
+监控包括以下事件：
+    1. 新增文件(created)
+    2. 删除文件(deleted)
+    3. 移动文件(moved)
+    4. 改动文件(modified)
+。
+文件之间存在一些引用关系：
+    1. .css 引用其它 .css
+    2. .html/.xhtml 引用其它文件（除了 .ncx）
+    3. .ncx 引用其它 .html/.xhtml
+，当文件增加、删除、移动，以及 .css/.html/.xhtml/.ncx 文件改动后，引用关系就会被自动更新。
+更具体的，我会尝试从下列 media-type (mimetype) 的文件中提取引用关系：
+- text/html
+- application/xhtml+xml
+- application/x-dtbook+xml
+- application/x-dtbncx+xml
+- text/css
+
+启动程序后，不要关闭命令行窗口，否则程序会强制退出，变动也会丢失。
+当你想结束编辑时，在刚才打开的命令行窗口，输入 Ctrl+C ，程序会被正常终止，且生成一个改动后的 EPUB 文件。""")
     parser.add_argument("epub_path", nargs="?", help="请指定一个要编辑的 EPUB 文件路径，"
-        "如果文件路径不存在，则自动创建一个 EPUB 3 标准的新文件")
+        "如果文件路径不存在，则自动创建一个符合 EPUB 3 标准的新文件。")
     parser.add_argument("-i", "--inplace", action="store_true", help="覆盖原来的文件。"
         "不指定此参数（默认行为）时，会生成一个新文件，而不是覆盖。")
     parser.add_argument("-d", "--debug", action="store_true", help="启用调试信息。"
         "如果指定此参数，会将日志级别设置为 DEBUG（否则，默认为 INFO）。")
     parser.add_argument("-m", "--makeid", default="basename", choices=TYPE_TO_MAKEID, 
     help="""新文件在 OPF 中的 id。
-可选以下值：
-    basename: 文件名（默认）
-    bookpath: 相对于 epub 根目录的相对路径
-    bookhref: 相对于 opf 文件所在目录的相对路径
-    uuid: 4 位 UUID
-    timestamp: 时间戳（单位是秒，值是浮点数）
-    timestamp_ns: 时间戳（单位是纳秒，值是整数）
-""")
+可选以下值，默认为 basename：""" + "".join(
+        "\n    %s: %s" % (typ, fn.__doc__) for typ, fn in TYPE_TO_MAKEID.items()))
     args = parser.parse_args()
     if args.epub_path is None:
         parser.parse_args(["-h"])
@@ -48,16 +54,26 @@ import sys
 if sys.version_info < (3, 8):
     raise SystemExit("Python 版本不得低于 3.8，你的版本是\n%s" % sys.version)
 
-try:
-    import watchdog # type: ignore
-except ImportError:
-    choose = input("检测到缺少模块 watchdog，是否安装？ [y]/n").strip()
-    if not choose or choose.lower() in ("y", "yes"):
-        from util.usepip import install
+def ensure_module(
+    module, 
+    installs: Optional[tuple[str, ...]] = None, 
+    index_url: str = "https://pypi.tuna.tsinghua.edu.cn/simple", 
+):
+    if installs is None:
+        installs = module,
+    try:
+        __import__(module)
+    except ImportError:
+        choose = input("检测到缺少模块 %s，是否安装？ [y]/n" %s).strip()
+        if not choose or choose.lower() in ("y", "yes"):
+            from util.piputils import install
 
-        install("watchdog", index_url="https://pypi.tuna.tsinghua.edu.cn/simple")
-    else:
-        raise SystemExit("干脆退出")
+            install(*installs, index_url=index_url)
+        else:
+            raise SystemExit("干脆退出")
+
+ensure_module("watchdog")
+ensure_module("lxml")
 
 from contextlib import contextmanager
 from datetime import datetime
@@ -68,23 +84,25 @@ from pkgutil import get_data
 from tempfile import TemporaryDirectory
 from re import sub as re_sub
 from string import Template
-from time import time
-from typing import Callable
+from time import time_ns
 from uuid import uuid4
 from zipfile import ZipFile
 
+from util.opfwrapper import OpfWrapper
 from util.pathutils import openpath
 from util.watch import watch
-from util.opfwrapper import OpfWrapper
 from util.ziputils import zip as makezip
 
+
+# Refer to the rules of [.gitignore](https://git-scm.com/docs/gitignore)
+IGNORES = (".DS_store", "Thumb.store", "desktop.ini", "._*")
 
 @contextmanager
 def ctx_epub_tempdir(path: str, is_inplace: bool = False):
     def filter_filename(srcpath, _):
         basename = syspath.basename(srcpath)
         return not (
-            basename in (".DS_store", "Thumb.store", "desktop.ini")
+            basename in IGNORES
             or fnmatch(basename, ".*")
         )
 
@@ -115,7 +133,7 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
         stem = basename[:-len(".epub")]
     else:
         stem = basename
-    stem = re_sub("_\d{10,}$", "", stem)
+    stem = re_sub("_\d{18,}$", "", stem)
 
     td = TemporaryDirectory()
     try:
@@ -131,9 +149,21 @@ def ctx_epub_tempdir(path: str, is_inplace: bool = False):
             except FileNotFoundError:
                 pass
         else:
-            target_path = syspath.join(dirname, f"{stem}_{time():.0f}.epub")
-        makezip(tempdir, target_path, predicate=filter_filename)
-        print("Generated file:", target_path)
+            target_path = syspath.join(dirname, "%s_%.0f.epub" % (stem, time_ns()))
+        while True:
+            try:
+                makezip(tempdir, target_path, predicate=filter_filename)
+                print("Generated file:", target_path)
+                break
+            except (PermissionError, FileNotFoundError, FileExistsError) as exc:
+                print("创建文件 %r 失败，因为 %r" % (target_path, exc))
+                target_path = input(
+                    "请输入一个可用的保存路径后回车（不输入直接回车），则放弃保存！\n路径：")
+                if not target_path:
+                    print("放弃保存")
+                    break
+                if not syspath.isabs(target_path):
+                    target_path = syspath.join(dirname, target_path)
     finally:
         try:
             td.cleanup()
@@ -148,13 +178,13 @@ if __name__ == "__main__":
 
     import logging
 
-    LOGGER: logging.Logger = logging.getLogger()
-    LOGGER.setLevel(logging.DEBUG if args.debug else logging.INFO)
-    _sh = logging.StreamHandler()
-    LOGGER.addHandler(_sh)
-    _fmt = logging.Formatter('[%(asctime)s] %(levelname)s ➜ %(message)s')
-    _fmt.datefmt = '%Y-%m-%d %H:%M:%S'
-    _sh.setFormatter(_fmt)
+    logger: logging.Logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    handler = logging.StreamHandler()
+    logger.addHandler(handler)
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s ➜ %(message)s')
+    formatter.datefmt = '%Y-%m-%d %H:%M:%S'
+    handler.setFormatter(formatter)
 
     from os import chdir, getcwd
 

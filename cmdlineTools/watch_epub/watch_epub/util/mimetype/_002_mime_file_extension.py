@@ -4,10 +4,14 @@ __all__ = ["ext_to_mimes"]
 #    - https://gist.github.com/bj4rtmar/3fc949de5fe73ed59ca5
 #    - https://gist.github.com/nimasdj/801b0b1a50112ea6a997
 #    - https://gist.github.com/plasticbrain/3887245
+#    - https://www.ryadel.com/en/get-file-content-mime-type-from-extension-asp-net-mvc-core/
 #    - https://stackoverflow.com/questions/1735659/list-of-all-mimetypes-on-the-planet-mapped-to-file-extensions
 ext_to_mimes = {
     ".123": [
         "application/vnd.lotus-1-2-3"
+    ],
+    ".323": [
+        "text/h323"
     ],
     ".3dm": [
         "x-world/x-3dmf"
@@ -27,20 +31,36 @@ ext_to_mimes = {
     ".3gp": [
         "video/3gpp"
     ],
+    ".3gp2": [
+        "video/3gpp2"
+    ],
+    ".3gpp": [
+        "video/3gpp"
+    ],
     ".7z": [
         "application/x-7z-compressed"
+    ],
+    ".aa": [
+        "audio/audible"
     ],
     ".aab": [
         "application/x-authorware-bin"
     ],
     ".aac": [
+        "audio/aac",
         "audio/x-aac"
+    ],
+    ".aaf": [
+        "application/octet-stream"
     ],
     ".aam": [
         "application/x-authorware-map"
     ],
     ".aas": [
         "application/x-authorware-seg"
+    ],
+    ".aax": [
+        "audio/vnd.audible.aax"
     ],
     ".abc": [
         "text/vnd.abc"
@@ -51,11 +71,20 @@ ext_to_mimes = {
     ".ac": [
         "application/pkix-attr-cert"
     ],
+    ".ac3": [
+        "audio/ac3"
+    ],
     ".acc": [
         "application/vnd.americandynamics.acc"
     ],
+    ".accda": [
+        "application/msaccess.addin"
+    ],
     ".ace": [
         "application/x-ace-compressed"
+    ],
+    ".accft": [
+        "application/msaccess.ftemplate"
     ],
     ".acgi": [
         "text/html"
@@ -66,8 +95,17 @@ ext_to_mimes = {
     ".acutc": [
         "application/vnd.acucorp"
     ],
+    ".acx": [
+        "application/internet-property-stream"
+    ],
+    ".adobebridge": [
+        "application/x-bridge-url"
+    ],
     ".adp": [
         "audio/adpcm"
+    ],
+    ".adt": [
+        "audio/vnd.dlna.adts"
     ],
     ".aep": [
         "application/vnd.audiograph"
@@ -139,26 +177,46 @@ ext_to_mimes = {
         "application/x-freearc"
     ],
     ".arj": [
-        "application/arj",
-        "application/octet-stream"
+        "application/arj"
     ],
     ".art": [
         "image/x-jg"
     ],
+    ".asa": [
+        "application/xml"
+    ],
     ".asc": [
         "application/pgp-signature"
+    ],
+    ".ascx": [
+        "application/xml"
+    ],
+    ".asd": [
+        "application/octet-stream"
     ],
     ".asf": [
         "video/x-ms-asf"
     ],
+    ".ashx": [
+        "application/xml"
+    ],
     ".asm": [
         "text/x-asm"
+    ],
+    ".asmx": [
+        "application/xml"
     ],
     ".aso": [
         "application/vnd.accpac.simply.aso"
     ],
     ".asp": [
         "text/asp"
+    ],
+    ".aspx": [
+        "application/xml"
+    ],
+    ".asr": [
+        "video/x-ms-asf"
     ],
     ".asx": [
         "video/x-ms-asf",
@@ -179,6 +237,12 @@ ext_to_mimes = {
     ],
     ".atx": [
         "application/vnd.antix.game-component"
+    ],
+    ".axs": [
+        "application/olescript"
+    ],
+    ".axv": [
+        "video/annodex"
     ],
     ".au": [
         "audio/basic"
@@ -349,6 +413,9 @@ ext_to_mimes = {
     ".cdbcmsg": [
         "application/vnd.contact.cmsg"
     ],
+    ".cdda": [
+        "audio/aiff"
+    ],
     ".cdf": [
         "application/x-cdf",
         "application/x-netcdf",
@@ -422,7 +489,8 @@ ext_to_mimes = {
         "application/java-vm",
         "application/java",
         "application/java-byte-code",
-        "application/x-java-class"
+        "application/x-java-class",
+        "application/x-java-applet",
     ],
     ".clkk": [
         "application/vnd.crick.clicker.keyboard"
@@ -458,7 +526,8 @@ ext_to_mimes = {
         "image/x-cmx"
     ],
     ".cod": [
-        "application/vnd.rim.cod"
+        "application/vnd.rim.cod",
+        "image/cis-cod"
     ],
     ".com": [
         "application/x-msdos-program",
@@ -466,6 +535,16 @@ ext_to_mimes = {
     ],
     ".conf": [
         "text/plain"
+    ],
+    ".config": [
+        "application/xml",
+        "text/plain"
+    ],
+    ".contact": [
+        "text/x-ms-contact"
+    ],
+    ".coverage": [
+        "application/xml"
     ],
     ".cpio": [
         "application/x-cpio"
@@ -507,6 +586,9 @@ ext_to_mimes = {
     ],
     ".csp": [
         "application/vnd.commonspace"
+    ],
+    ".csproj": [
+        "text/plain"
     ],
     ".css": [
         "text/css",
@@ -551,6 +633,9 @@ ext_to_mimes = {
     ".dbk": [
         "application/docbook+xml"
     ],
+    ".dbproj": [
+        "text/plain"
+    ],
     ".dcr": [
         "application/x-director"
     ],
@@ -584,6 +669,9 @@ ext_to_mimes = {
     ".dgc": [
         "application/x-dgc-compressed"
     ],
+    ".dib": [
+        "image/bmp"
+    ],
     ".dic": [
         "text/x-c"
     ],
@@ -600,12 +688,10 @@ ext_to_mimes = {
         "application/vnd.mobius.dis"
     ],
     ".dist": [
-        "application/vnd.apple.installer+xml",
-        "application/octet-stream"
+        "application/vnd.apple.installer+xml"
     ],
     ".distz": [
-        "application/vnd.apple.installer+xml",
-        "application/octet-stream"
+        "application/vnd.apple.installer+xml"
     ],
     ".djv": [
         "image/vnd.djvu"
@@ -627,8 +713,7 @@ ext_to_mimes = {
         "application/vnd.tcpdump.pcap"
     ],
     ".dms": [
-        "text/vnd.DMClientScript",
-        "application/octet-stream"
+        "text/vnd.DMClientScript"
     ],
     ".dna": [
         "application/vnd.dna"
@@ -637,7 +722,8 @@ ext_to_mimes = {
         "application/msword"
     ],
     ".docm": [
-        "application/vnd.ms-word.document.macroenabled.12"
+        "application/vnd.ms-word.document.macroenabled.12",
+        "application/vnd.ms-word.document.macroEnabled.12"
     ],
     ".docx": [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -646,7 +732,8 @@ ext_to_mimes = {
         "application/msword"
     ],
     ".dotm": [
-        "application/vnd.ms-word.template.macroenabled.12"
+        "application/vnd.ms-word.template.macroenabled.12",
+        "application/vnd.ms-word.template.macroEnabled.12"
     ],
     ".dotx": [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
@@ -665,6 +752,9 @@ ext_to_mimes = {
     ],
     ".dsc": [
         "text/prs.lines.tag"
+    ],
+    ".dsp": [
+        "application/octet-stream"
     ],
     ".dssc": [
         "application/dssc+der"
@@ -872,6 +962,12 @@ ext_to_mimes = {
     ".fig": [
         "application/x-xfig"
     ],
+    ".filters": [
+        "application/xml"
+    ],
+    ".fla": [
+        "application/octet-stream"
+    ],
     ".flac": [
         "audio/flac"
     ],
@@ -881,6 +977,9 @@ ext_to_mimes = {
     ],
     ".flo": [
         "application/vnd.micrografx.flo"
+    ],
+    ".flr": [
+        "x-world/x-vrml"
     ],
     ".flv": [
         "video/x-flv"
@@ -922,6 +1021,9 @@ ext_to_mimes = {
     ],
     ".fst": [
         "image/vnd.fst"
+    ],
+    ".fsx": [
+        "application/fsharp-script"
     ],
     ".ftc": [
         "application/vnd.fluxtime.clip"
@@ -970,6 +1072,9 @@ ext_to_mimes = {
     ],
     ".gdl": [
         "model/vnd.gdl"
+    ],
+    ".generictest": [
+        "application/xml"
     ],
     ".geo": [
         "application/vnd.dynageo"
@@ -1025,6 +1130,9 @@ ext_to_mimes = {
     ],
     ".gre": [
         "application/vnd.geometry-explorer"
+    ],
+    ".group": [
+        "text/x-ms-group"
     ],
     ".grv": [
         "application/vnd.groove-injector"
@@ -1107,6 +1215,12 @@ ext_to_mimes = {
         "text/x-c++hdr",
         "text/plain"
     ],
+    ".hhk": [
+        "application/octet-stream"
+    ],
+    ".hhp": [
+        "application/octet-stream"
+    ],
     ".hlb": [
         "text/x-script"
     ],
@@ -1168,6 +1282,36 @@ ext_to_mimes = {
     ],
     ".hvs": [
         "application/vnd.yamaha.hv-script"
+    ],
+    ".hxa": [
+        "application/xml"
+    ],
+    ".hxc": [
+        "application/xml"
+    ],
+    ".hxe": [
+        "application/xml"
+    ],
+    ".hxf": [
+        "application/xml"
+    ],
+    ".hxh": [
+        "application/octet-stream"
+    ],
+    ".hxi": [
+        "application/octet-stream"
+    ],
+    ".hxk": [
+        "application/xml"
+    ],
+    ".hxr": [
+        "application/octet-stream"
+    ],
+    ".hxs": [
+        "application/octet-stream"
+    ],
+    ".hxw": [
+        "application/octet-stream"
     ],
     ".i2g": [
         "application/vnd.intergeo"
@@ -1258,11 +1402,17 @@ ext_to_mimes = {
     ".ip": [
         "application/x-ip2"
     ],
+    ".ipa": [
+        "application/x-itunes-ipa"
+    ],
     ".ipfix": [
         "application/ipfix"
     ],
     ".ipk": [
         "application/vnd.shana.informed.package"
+    ],
+    ".ipsw": [
+        "application/x-itunes-ipsw"
     ],
     ".irm": [
         "application/vnd.ibm.rights-management"
@@ -1273,17 +1423,29 @@ ext_to_mimes = {
     ".iso": [
         "application/x-iso9660-image"
     ],
+    ".isp": [
+        "application/x-internet-signup"
+    ],
     ".isu": [
         "video/x-isvideo"
     ],
     ".it": [
         "audio/it"
     ],
+    ".itlp": [
+        "application/x-itunes-itlp"
+    ],
+    ".itms": [
+        "application/x-itunes-itms"
+    ],
     ".itp": [
         "application/vnd.shana.informed.formtemplate"
     ],
     ".iv": [
         "application/x-inventor"
+    ],
+    ".ivf": [
+        "video/x-ivf"
     ],
     ".ivp": [
         "application/vnd.immervision-ivp"
@@ -1316,6 +1478,9 @@ ext_to_mimes = {
     ],
     ".jcm": [
         "application/x-java-commerce"
+    ],
+    ".jcz": [
+        "application/liquidmotion"
     ],
     ".jfif": [
         "image/jpeg",
@@ -1466,6 +1631,9 @@ ext_to_mimes = {
     ".lhx": [
         "application/octet-stream"
     ],
+    ".library-ms": [
+        "application/windows-library+xml"
+    ],
     ".link66": [
         "application/vnd.route66.link66+xml"
     ],
@@ -1491,11 +1659,17 @@ ext_to_mimes = {
     ".lostxml": [
         "application/lost+xml"
     ],
+    ".lpk": [
+        "application/octet-stream"
+    ],
     ".lrf": [
         "application/octet-stream"
     ],
     ".lrm": [
         "application/vnd.ms-lrm"
+    ],
+    ".lsf": [
+        "video/x-la-asf"
     ],
     ".lsp": [
         "application/x-lisp",
@@ -1558,16 +1732,25 @@ ext_to_mimes = {
         "audio/mpeg"
     ],
     ".m3u": [
+        "application/vnd.apple.mpegurl",
         "audio/x-mpegurl"
     ],
     ".m3u8": [
-        "application/x-mpegURL"
+        "application/vnd.apple.mpegurl",
+        "audio/x-mpegurl"
     ],
     ".m4a": [
-        "audio/mp4"
+        "audio/m4a",
+        "audio/x-m4a"
+    ],
+    ".m4b": [
+        "audio/m4b"
     ],
     ".m4p": [
-        "application/mp4"
+        "audio/m4p"
+    ],
+    ".m4r": [
+        "audio/x-m4r"
     ],
     ".m4u": [
         "video/vnd.mpegurl"
@@ -1583,6 +1766,9 @@ ext_to_mimes = {
     ],
     ".mag": [
         "application/vnd.ecowin.chart"
+    ],
+    ".mak": [
+        "text/plain"
     ],
     ".maker": [
         "application/vnd.framemaker"
@@ -1601,6 +1787,9 @@ ext_to_mimes = {
     ],
     ".markdown": [
         "text/x-markdown"
+    ],
+    ".master": [
+        "application/xml"
     ],
     ".mathml": [
         "application/mathml+xml"
@@ -1648,6 +1837,7 @@ ext_to_mimes = {
         "image/vnd.ms-modi"
     ],
     ".me": [
+        "application/x-troff-me",
         "text/troff"
     ],
     ".mesh": [
@@ -1751,7 +1941,8 @@ ext_to_mimes = {
         "application/base64"
     ],
     ".mmf": [
-        "application/vnd.smaf"
+        "application/vnd.smaf",
+        "application/x-smaf"
     ],
     ".mmr": [
         "image/vnd.fujixerox.edmics-mmr"
@@ -1768,7 +1959,8 @@ ext_to_mimes = {
     ".mod": [
         "application/xml-dtd",
         "audio/mod",
-        "audio/x-mod"
+        "audio/x-mod",
+        "video/mpeg"
     ],
     ".mods": [
         "application/mods+xml"
@@ -1783,10 +1975,10 @@ ext_to_mimes = {
         "video/x-sgi-movie"
     ],
     ".mp2": [
-        "audio/mpeg",
-        "audio/x-mpeg",
         "video/mpeg",
+        "audio/mpeg",
         "video/x-mpeg",
+        "audio/x-mpeg",
         "video/x-mpeq2a"
     ],
     ".mp21": [
@@ -1795,12 +1987,18 @@ ext_to_mimes = {
     ".mp2a": [
         "audio/mpeg"
     ],
+    ".mp2v": [
+        "video/mpeg"
+    ],
     ".mp3": [
         "audio/mpeg",
         "audio/x-mpeg-3",
     ],
     ".mp4": [
-        "video/mp4"
+        "video/mp4",
+        "audio/mp4",
+        "application/mp4",
+        "video/mpeg4-generic"
     ],
     ".mp4a": [
         "audio/mp4"
@@ -1890,11 +2088,18 @@ ext_to_mimes = {
     ".msl": [
         "application/vnd.mobius.msl"
     ],
+    ".mso": [
+        "application/octet-stream"
+    ],
     ".msty": [
         "application/vnd.muvee.style"
     ],
     ".mts": [
+        "video/vnd.dlna.mpeg-tts",
         "model/vnd.mts"
+    ],
+    ".mtx": [
+        "application/xml"
     ],
     ".mus": [
         "application/vnd.musician"
@@ -1919,6 +2124,9 @@ ext_to_mimes = {
     ],
     ".mxml": [
         "application/xv+xml"
+    ],
+    ".mxp": [
+        "application/x-mmxp"
     ],
     ".mxs": [
         "application/vnd.triscape.mxs"
@@ -2031,6 +2239,9 @@ ext_to_mimes = {
     ".obj": [
         "application/x-tgif"
     ],
+    ".ocx": [
+        "application/octet-stream"
+    ],
     ".oda": [
         "application/oda"
     ],
@@ -2088,6 +2299,9 @@ ext_to_mimes = {
     ".omdoc": [
         "application/omdoc+xml"
     ],
+    ".onea": [
+        "application/onenote"
+    ],
     ".onepkg": [
         "application/onenote"
     ],
@@ -2109,6 +2323,12 @@ ext_to_mimes = {
     ".oprc": [
         "application/vnd.palm"
     ],
+    ".opus": [
+        "audio/ogg"
+    ],
+    ".orderedtest": [
+        "application/xml"
+    ],
     ".org": [
         "application/vnd.lotus-organizer"
     ],
@@ -2122,7 +2342,12 @@ ext_to_mimes = {
         "application/vnd.oasis.opendocument.chart-template"
     ],
     ".otf": [
-        "font/opentype"
+        "font/otf",
+        "font/ttf",
+        "font/sfnt",
+        "application/font-sfnt",
+        "font/opentype",
+        "application/x-font-otf"
     ],
     ".otg": [
         "application/vnd.oasis.opendocument.graphics-template"
@@ -2307,8 +2532,21 @@ ext_to_mimes = {
     ".pm5": [
         "application/x-pagemaker"
     ],
+    ".pma": [
+        "application/x-perfmon"
+    ],
+    ".pmc": [
+        "application/x-perfmon"
+    ],
     ".pml": [
-        "application/vnd.ctc-posml"
+        "application/vnd.ctc-posml",
+        "application/x-perfmon"
+    ],
+    ".pmr": [
+        "application/x-perfmon"
+    ],
+    ".pmw": [
+        "application/x-perfmon"
     ],
     ".png": [
         "image/png"
@@ -2316,6 +2554,9 @@ ext_to_mimes = {
     ".pnm": [
         "image/x-portable-anymap",
         "application/x-portable-anymap"
+    ],
+    ".pnz": [
+        "image/png"
     ],
     ".portpkg": [
         "application/vnd.macports.portpkg"
@@ -2337,7 +2578,8 @@ ext_to_mimes = {
         "application/vnd.ms-powerpoint"
     ],
     ".ppam": [
-        "application/vnd.ms-powerpoint.addin.macroenabled.12"
+        "application/vnd.ms-powerpoint.addin.macroenabled.12",
+        "application/vnd.ms-powerpoint.addin.macroEnabled.12"
     ],
     ".ppd": [
         "application/vnd.cups-ppd"
@@ -2350,7 +2592,8 @@ ext_to_mimes = {
         "application/mspowerpoint"
     ],
     ".ppsm": [
-        "application/vnd.ms-powerpoint.slideshow.macroenabled.12"
+        "application/vnd.ms-powerpoint.slideshow.macroenabled.12",
+        "application/vnd.ms-powerpoint.slideshow.macroEnabled.12"
     ],
     ".ppsx": [
         "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
@@ -2362,7 +2605,8 @@ ext_to_mimes = {
         "application/x-mspowerpoint"
     ],
     ".pptm": [
-        "application/vnd.ms-powerpoint.presentation.macroenabled.12"
+        "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+        "application/vnd.ms-powerpoint.presentation.macroEnabled.12"
     ],
     ".pptx": [
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -2391,14 +2635,26 @@ ext_to_mimes = {
     ".psb": [
         "application/vnd.3gpp.pic-bw-small"
     ],
+    ".psc1": [
+        "application/PowerShell"
+    ],
     ".psd": [
         "image/vnd.adobe.photoshop"
+    ],
+    ".psess": [
+        "application/xml"
     ],
     ".psf": [
         "application/x-font-linux-psf"
     ],
     ".pskcxml": [
         "application/pskc+xml"
+    ],
+    ".psm": [
+        "application/octet-stream"
+    ],
+    ".psp": [
+        "application/octet-stream"
     ],
     ".ptid": [
         "application/vnd.pvi.ptid1"
@@ -2512,6 +2768,9 @@ ext_to_mimes = {
     ".rdf": [
         "application/rdf+xml"
     ],
+    ".rdlc": [
+        "application/xml"
+    ],
     ".rdz": [
         "application/vnd.data-vision.rdz"
     ],
@@ -2520,6 +2779,9 @@ ext_to_mimes = {
     ],
     ".res": [
         "application/x-dtbresource+xml"
+    ],
+    ".resx": [
+        "application/xml"
     ],
     ".rexx": [
         "text/x-script.rexx"
@@ -2560,7 +2822,8 @@ ext_to_mimes = {
     ],
     ".rmp": [
         "audio/x-pn-realaudio-plugin",
-        "audio/x-pn-realaudio"
+        "audio/x-pn-realaudio",
+        "application/vnd.rn-rn_music_package"
     ],
     ".rms": [
         "application/vnd.jcp.javame.midlet-rms"
@@ -2582,7 +2845,8 @@ ext_to_mimes = {
         "application/rpki-roa"
     ],
     ".roff": [
-        "text/troff"
+        "text/troff",
+        "application/x-troff"
     ],
     ".rp": [
         "image/vnd.rn-realpix"
@@ -2624,11 +2888,15 @@ ext_to_mimes = {
         "text/richtext",
         "application/rtf"
     ],
+    ".ruleset": [
+        "application/xml"
+    ],
     ".rv": [
         "video/vnd.rn-realvideo"
     ],
     ".s": [
-        "text/x-asm"
+        "text/x-asm",
+        "text/plain"
     ],
     ".s3m": [
         "audio/s3m"
@@ -2660,6 +2928,9 @@ ext_to_mimes = {
     ],
     ".scs": [
         "application/scvp-cv-response"
+    ],
+    ".sct": [
+        "text/scriptlet"
     ],
     ".scurl": [
         "text/vnd.curl.scurl"
@@ -2723,6 +2994,9 @@ ext_to_mimes = {
     ".setreg": [
         "application/set-registration-initiation"
     ],
+    ".settings": [
+        "application/xml"
+    ],
     ".sfd-hdstx": [
         "application/vnd.hydrostatix.sof-data"
     ],
@@ -2747,10 +3021,10 @@ ext_to_mimes = {
         "text/x-sgml"
     ],
     ".sh": [
-        "text/x-sh",
         "application/x-sh",
         "application/x-bsh",
         "application/x-shar",
+        "text/x-sh",
         "text/x-script.sh"
     ],
     ".shar": [
@@ -2792,11 +3066,17 @@ ext_to_mimes = {
         "application/x-stuffit",
         "application/x-sit"
     ],
+    ".sitemap": [
+        "application/xml"
+    ],
     ".sitx": [
         "application/x-stuffitx"
     ],
     ".skd": [
         "application/vnd.koan"
+    ],
+    ".skin": [
+        "application/xml"
     ],
     ".skm": [
         "application/vnd.koan"
@@ -2819,11 +3099,17 @@ ext_to_mimes = {
     ".sldx": [
         "application/vnd.openxmlformats-officedocument.presentationml.slide"
     ],
+    ".slk": [
+        "application/vnd.ms-excel"
+    ],
     ".slt": [
         "application/vnd.epson.salt"
     ],
     ".sm": [
         "application/vnd.stepmania.stepchart"
+    ],
+    ".smd": [
+        "audio/x-smd"
     ],
     ".smf": [
         "application/vnd.stardivision.math"
@@ -2834,8 +3120,14 @@ ext_to_mimes = {
     ".smil": [
         "application/smil+xml"
     ],
+    ".smx": [
+        "audio/x-smd"
+    ],
     ".smv": [
         "video/x-smv"
+    ],
+    ".smz": [
+        "audio/x-smd"
     ],
     ".smzip": [
         "application/vnd.stepmania.package"
@@ -2847,11 +3139,20 @@ ext_to_mimes = {
     ".snf": [
         "application/x-font-snf"
     ],
+    ".snippet": [
+        "application/xml"
+    ],
+    ".snp": [
+        "application/octet-stream"
+    ],
     ".so": [
         "application/octet-stream"
     ],
     ".sol": [
         "application/solids"
+    ],
+    ".sor": [
+        "text/plain"
     ],
     ".spc": [
         "application/x-pkcs7-certificates",
@@ -2969,7 +3270,8 @@ ext_to_mimes = {
         "application/x-sv4crc"
     ],
     ".svc": [
-        "application/vnd.dvb.service"
+        "application/vnd.dvb.service",
+        "application/xml"
     ],
     ".svd": [
         "application/vnd.svd"
@@ -3016,7 +3318,8 @@ ext_to_mimes = {
         "application/vnd.sun.xml.writer"
     ],
     ".t": [
-        "text/troff"
+        "text/troff",
+        "application/x-troff"
     ],
     ".t3": [
         "application/x-t3vm-image"
@@ -3041,8 +3344,8 @@ ext_to_mimes = {
         "application/vnd.3gpp2.tcap"
     ],
     ".tcl": [
-        "text/x-tcl",
         "application/x-tcl",
+        "text/x-tcl",
         "text/x-script.tcl"
     ],
     ".tcsh": [
@@ -3056,6 +3359,12 @@ ext_to_mimes = {
     ],
     ".teicorpus": [
         "application/tei+xml"
+    ],
+    ".testrunconfig": [
+        "application/xml"
+    ],
+    ".testsettings": [
+        "application/xml"
     ],
     ".tex": [
         "application/x-tex"
@@ -3095,8 +3404,14 @@ ext_to_mimes = {
         "image/tiff",
         "image/x-tiff"
     ],
+    ".tlh": [
+        "text/plain"
+    ],
     ".tmo": [
         "application/vnd.tmobile-livetv"
+    ],
+    ".toc": [
+        "application/octet-stream"
     ],
     ".torrent": [
         "application/x-bittorrent"
@@ -3108,7 +3423,8 @@ ext_to_mimes = {
         "application/vnd.trid.tpt"
     ],
     ".tr": [
-        "text/troff"
+        "text/troff",
+        "application/x-troff"
     ],
     ".tra": [
         "application/vnd.trueapp"
@@ -3116,8 +3432,12 @@ ext_to_mimes = {
     ".trm": [
         "application/x-msterminal"
     ],
+    ".trx": [
+        "application/xml"
+    ],
     ".ts": [
-        "video/MP2T"
+        "video/mp2t",
+        "video/vnd.dlna.mpeg-tts"
     ],
     ".tsd": [
         "application/timestamped-data"
@@ -3133,9 +3453,14 @@ ext_to_mimes = {
         "text/tab-separated-values"
     ],
     ".ttc": [
-        "application/x-font-ttf"
+        "font/collection"
     ],
     ".ttf": [
+        "font/ttf",
+        "font/otf",
+        "font/sfnt",
+        "application/font-sfnt",
+        "font/opentype",
         "application/x-font-ttf"
     ],
     ".ttl": [
@@ -3143,6 +3468,9 @@ ext_to_mimes = {
     ],
     ".ttml": [
         "application/ttml+xml"
+    ],
+    ".tts": [
+        "video/vnd.dlna.mpeg-tts"
     ],
     ".turbot": [
         "image/florian"
@@ -3304,6 +3632,9 @@ ext_to_mimes = {
     ".uvz": [
         "application/vnd.dece.zip"
     ],
+    ".vbk": [
+        "video/mpeg"
+    ],
     ".vcard": [
         "text/vcard"
     ],
@@ -3316,11 +3647,17 @@ ext_to_mimes = {
     ".vcg": [
         "application/vnd.groove-vcard"
     ],
+    ".vcproj": [
+        "application/xml"
+    ],
     ".vcs": [
         "text/x-vcalendar"
     ],
     ".vcx": [
         "application/vnd.vcx"
+    ],
+    ".vcxproj": [
+        "application/xml"
     ],
     ".vda": [
         "application/vda"
@@ -3381,11 +3718,20 @@ ext_to_mimes = {
     ".vrt": [
         "x-world/x-vrt"
     ],
+    ".vscontent": [
+        "application/xml"
+    ],
     ".vsd": [
         "application/vnd.visio"
     ],
     ".vsf": [
         "application/vnd.vsf"
+    ],
+    ".vsix": [
+        "application/vsix"
+    ],
+    ".vsmdi": [
+        "application/xml"
     ],
     ".vss": [
         "application/vnd.visio"
@@ -3396,11 +3742,17 @@ ext_to_mimes = {
     ".vsw": [
         "application/vnd.visio"
     ],
+    ".vsx": [
+        "application/vnd.visio"
+    ],
     ".vtt": [
         "text/vtt"
     ],
     ".vtu": [
         "model/vnd.vtu"
+    ],
+    ".vtx": [
+        "application/vnd.visio"
     ],
     ".vxml": [
         "application/voicexml+xml"
@@ -3421,8 +3773,12 @@ ext_to_mimes = {
         "application/x-doom"
     ],
     ".wav": [
-        "audio/x-wav",
-        "audio/wav"
+        "audio/wav",
+        "audio/x-wav"
+    ],
+    ".wave": [
+        "audio/wav",
+        "audio/x-wav"
     ],
     ".wax": [
         "audio/x-ms-wax"
@@ -3463,11 +3819,17 @@ ext_to_mimes = {
     ".webp": [
         "image/webp"
     ],
+    ".webtest": [
+        "application/xml"
+    ],
     ".wg": [
         "application/vnd.pmi.widget"
     ],
     ".wgt": [
         "application/widget"
+    ],
+    ".wiq": [
+        "application/xml"
     ],
     ".wiz": [
         "application/msword"
@@ -3477,6 +3839,12 @@ ext_to_mimes = {
     ],
     ".wks": [
         "application/vnd.ms-works"
+    ],
+    ".wlmp": [
+        "application/wlmoviemaker"
+    ],
+    ".wlpginstall3": [
+        "application/x-wlpg3-detect"
     ],
     ".wm": [
         "video/x-ms-wm"
@@ -3502,6 +3870,9 @@ ext_to_mimes = {
     ".wmlsc": [
         "application/vnd.wap.wmlscriptc"
     ],
+    ".wmp": [
+        "video/x-ms-wmp"
+    ],
     ".wmv": [
         "video/x-ms-wmv"
     ],
@@ -3509,10 +3880,15 @@ ext_to_mimes = {
         "video/x-ms-wmx"
     ],
     ".wmz": [
-        "application/x-msmetafile"
+        "application/x-msmetafile",
+        "application/x-ms-wmz"
     ],
     ".woff": [
+        "font/woff",
         "application/x-font-woff"
+    ],
+    ".woff2": [
+        "font/woff2"
     ],
     ".word": [
         "application/msword"
@@ -3564,7 +3940,7 @@ ext_to_mimes = {
         "x-world/x-vrml"
     ],
     ".wsc": [
-        "text/scriplet"
+        "text/scriptlet"
     ],
     ".wsdl": [
         "application/wsdl+xml"
@@ -3584,8 +3960,14 @@ ext_to_mimes = {
     ".wvx": [
         "video/x-ms-wvx"
     ],
+    ".x": [
+        "application/directx"
+    ],
     ".x-png": [
         "image/png"
+    ],
+    ".xaf": [
+        "x-world/x-vrml"
     ],
     ".x32": [
         "application/x-authorware-bin"
@@ -3733,7 +4115,8 @@ ext_to_mimes = {
         "application/x-msexcel"
     ],
     ".xlsb": [
-        "application/vnd.ms-excel.sheet.binary.macroenabled.12"
+        "application/vnd.ms-excel.sheet.binary.macroenabled.12",
+        "application/vnd.ms-excel.sheet.macroEnabled.12"
     ],
     ".xlsm": [
         "application/vnd.ms-excel.sheet.macroenabled.12"
@@ -3748,7 +4131,8 @@ ext_to_mimes = {
         "application/x-msexcel"
     ],
     ".xltm": [
-        "application/vnd.ms-excel.template.macroenabled.12"
+        "application/vnd.ms-excel.template.macroenabled.12",
+        "application/vnd.ms-excel.template.macroEnabled.12"
     ],
     ".xltx": [
         "application/vnd.openxmlformats-officedocument.spreadsheetml.template"
@@ -3772,11 +4156,17 @@ ext_to_mimes = {
         "application/xml",
         "text/xml"
     ],
+    ".xmta": [
+        "application/xml"
+    ],
     ".xmz": [
         "xgl/movie"
     ],
     ".xo": [
         "application/vnd.olpc-sugar"
+    ],
+    ".xoml": [
+        "text/plain"
     ],
     ".xop": [
         "application/xop+xml"
@@ -3786,6 +4176,7 @@ ext_to_mimes = {
     ],
     ".xpgt": [
         "application/vnd.adobe-page-template+xml",
+        "application/adobe-page-template+xml"
     ],
     ".xpi": [
         "application/x-xpinstall"
@@ -3812,6 +4203,12 @@ ext_to_mimes = {
     ".xpx": [
         "application/vnd.intercon.formnet"
     ],
+    ".xsc": [
+        "application/xml"
+    ],
+    ".xsd": [
+        "application/xml"
+    ],
     ".xsl": [
         "application/xml"
     ],
@@ -3821,11 +4218,17 @@ ext_to_mimes = {
     ".xsm": [
         "application/vnd.syncml+xml"
     ],
+    ".xsn": [
+        "application/octet-stream"
+    ],
     ".xspf": [
         "application/xspf+xml"
     ],
     ".xsr": [
         "video/x-amt-showrun"
+    ],
+    ".xss": [
+        "application/xml"
     ],
     ".xul": [
         "application/vnd.mozilla.xul+xml"

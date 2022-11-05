@@ -7,7 +7,9 @@ __all__ = ["zip", "unzip", "filter_zip_file"]
 
 
 import os
-from os import makedirs, path as syspath, walk
+import os.path as syspath
+
+from os import makedirs, walk
 from zipfile import ZipFile
 
 

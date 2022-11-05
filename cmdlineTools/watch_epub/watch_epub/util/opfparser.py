@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-__version__ = (0, 1)
+# Reference:
+#   - https://www.w3.org/publishing/epub3/epub-packages.html
+#   - https://www.w3.org/community/epub3/
+
+__version__ = (0, 1, 1)
 
 import sys
 import os
+import os.path as syspath
 import posixpath
 
-from os import path as syspath
 from re import search as re_search
 from urllib.parse import unquote
-from util.pathutils import reference_path, posixpath_to_syspath
+
+from util.mapper import Mapper
+from util.pathutils import reference_path, path_posix_to_sys
 
 
 SPECIAL_HANDLING_TAGS = dict([
-    ('?xml', ('xmlheader', -1)),
-    ('!--', ('comment', -3)),
-    ('!DOCTYPE', ('doctype', -1))
+    ("?xml", ("xmlheader", -1)),
+    ("!--", ("comment", -3)),
+    ("!DOCTYPE", ("doctype", -1))
 ])
 
-SPECIAL_HANDLING_TYPES = ['xmlheader', 'doctype', 'comment']
+SPECIAL_HANDLING_TYPES = ["xmlheader", "doctype", "comment"]
 
-_OPF_PARENT_TAGS = ['package', 'metadata', 'dc-metadata', 'x-metadata', 'manifest', 'spine', 'tours', 'guide', 'bindings']
+_OPF_PARENT_TAGS = [
+    "package", "metadata", "dc-metadata", "x-metadata", 
+    "manifest", "spine", "tours", "guide", "bindings", 
+]
 
 
 def get_opf_bookpath(ebook_root: str = ""):
@@ -39,7 +48,7 @@ def get_opf_bookpath(ebook_root: str = ""):
 class OpfParser:
 
     def __init__(self, ebook_root: str = ""):
-        self.ebook_root = ebook_root
+        ebook_root = self.ebook_root = syspath.realpath(ebook_root)
         self.opf_bookpath = opf_bookpath = get_opf_bookpath(ebook_root)
         self.opf_path = opf_path = self.get_path(opf_bookpath)
         self.opf_dir, self.opf_name = posixpath.split(opf_bookpath)
@@ -49,20 +58,14 @@ class OpfParser:
 
         self.opos = 0
         self.package = None
+
         # list of (tname, tattr, tcontent)
         self.metadata = []
         self.metadata_attr = None
         self.cover_id = None
 
-        self.id_to_bookpath = {}
-        self.id_to_href = {}
-        self.id_to_mime = {}
-        self.id_to_properties = {}
-        self.id_to_fallback = {}
-        self.id_to_overlay = {}
-
-        # list of (idref, linear, properties)
-        self.spine = []
+        self.manifest = {}
+        self.spine = {}
         self.spine_ppd = None
         # list of (type, title, href)
         self.guide = []
@@ -321,9 +324,26 @@ class OpfParser:
         data.append('</metadata>\n')
         return "".join(data)
 
-    def get_path(self, bookpath):
-        return syspath.join(
-            self.ebook_root, 
-            posixpath_to_syspath(bookpath), 
-        )
+
+
+    def id_to_bookhref(self, id):
+        return self.manifest[id].bookhref
+
+    def id_to_bookpath(self, id):
+        return self.manifest[id].bookpath
+
+    def id_to_mime(self, id):
+        return self.manifest[id].mime
+
+    def id_to_properties(self, id):
+        return self.manifest[id].properties
+
+    def id_to_fallback(self, id):
+        return self.manifest[id].fallback
+
+    def id_to_overlay(self, id):
+        return self.manifest[id].overlay
+
+    def id_to_spine(self, id):
+        return self.spine[id]
 

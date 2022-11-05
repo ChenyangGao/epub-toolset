@@ -1,28 +1,55 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+"""This module provides utilities for working with paths.
+
+Other important functions:
+    - os.fspath
+    - os.fsencode
+    - os.fsdecode
+    - urllib.parse.quote
+    - urllib.parse.unquote
+"""
+
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 2)
+__version__ = (0, 4)
 __all__ = [
-    "openpath", "starting_dir", "longest_common_dir", "clean_parts", 
-    "split", "split_all", "relative_path", "reference_path", 
-    "to_ntpath",  "to_posixpath", "to_syspath", 
-    "ntpath_to_syspath", "posixpath_to_syspath", 
+    "openpath", "starting_dir", "longest_common_dir", "split", "clean_parts", 
+    "normalize_ntpath", "normalize_posixpath", "normalize_path", "relative_path", 
+    "reference_path", "path_posix_to_nt", "path_nt_to_posix", "path_to_nt", 
+    "path_to_posix", "path_nt_to_sys", "path_posix_to_sys", "path_nt_to_url", 
+    "path_url_to_nt", 
 ]
 
+import os.path as syspath
 import ntpath
 import posixpath
 
-from os import fspath, path as syspath, PathLike
-from typing import AnyStr, Optional, Union
-
-# TODO: 对于 Windows 的路径，还有驱动器（盘符），所以，下面对于路径的处理，还需要完善一下
-#       借鉴 mingw，C:\转化为/c/
-# TODO: 去除sep参数 写nt和posix两种版本 以及不带前缀的版本(自动识别要用哪个函数) 
+from nturl2path import pathname2url as path_nt_to_url, url2pathname as path_url_to_nt
+from os import fspath, PathLike
+from re import compile as re_compile, Pattern
+from typing import cast, AnyStr, Optional, Union
 
 
-_sep: str = syspath.sep
-_sepb: bytes = syspath.sep.encode()
+cre_nt_seps = re_compile(r"[\\/]")
+creb_nt_seps = re_compile(br"[\\/]")
+cre_nt_name_na_chars = re_compile(r'\\:*?"<>|')
+creb_nt_name_na_chars = re_compile(br'\\:*?"<>|')
+cre_nt_name_na_chars_all = re_compile(r'/\\:*?"<>|')
+creb_nt_name_na_chars_all = re_compile(br'/\\:*?"<>|')
+cre_nt_drive = re_compile(r'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
+creb_nt_drive = re_compile(br'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
+
+ntsep: str = "\\"
+ntsepb: bytes = b"\\"
+posixsep: str = "/"
+posixsepb: bytes = b"/"
+syssep: str
+syssepb: bytes
+if syspath is ntpath:
+    syssep, syssepb = ntsep, ntsepb
+else:
+    syssep, syssepb = posixsep, posixsepb
 
 
 try:
@@ -69,9 +96,9 @@ def starting_dir(
     realsep: AnyStr
     if sep is None:
         if isinstance(path_, str):
-            realsep = _sep
+            realsep = syssep
         else:
-            realsep = _sepb
+            realsep = syssepb
     else:
         realsep = sep
 
@@ -95,6 +122,11 @@ def longest_common_dir(
     Definition:
         The *longest common directory* is the longest common ancestor 
             directory of many paths.
+    😄 Tips: You can use
+        - `os.path.commonpath`, `os.path.commonprefix`
+        - `ntpath.commonpath`, `ntpath.commonprefix`
+        - `posixpath.commonpath`, `posixpath.commonprefix`
+    instead.
  
     :param path:  The path.
     :param paths: The other paths.
@@ -107,15 +139,15 @@ def longest_common_dir(
     if not paths:
         return starting_dir(path, realsep)
 
-    paths = (fspath(path), *map(fspath, paths))
-    p1, p2 = min(paths), max(paths)
+    paths_: tuple[AnyStr, ...] = (fspath(path), *(fspath(p) for p in paths))
+    p1, p2 = min(paths_), max(paths_)
 
     realsep: AnyStr
     if sep is None:
         if isinstance(p1, str):
-            realsep = _sep
+            realsep = syssep
         else:
-            realsep = _sepb
+            realsep = syssepb
     else:
         realsep = sep
 
@@ -129,9 +161,65 @@ def longest_common_dir(
     return p1[:lastest_index]
 
 
+def split(
+    path: Union[AnyStr, PathLike[AnyStr]], 
+    sep: Union[None, AnyStr, Pattern[AnyStr]] = None, 
+    maxsplit: int = -1, 
+    from_left: bool = False, 
+) -> list[AnyStr]:
+    """Split `path` into a list of parts, using `sep` as the delimiter string.
+
+    :param path: A path to be splitted.
+    :param sep:  The delimiter according which to split the `path`.
+    :param maxsplit: Maximum number of splits to do.
+        -1 (the default value) means no limit.
+    :param from_left: If False (the default), divide from right to left, 
+        otherwise from left to right.
+
+    :return: A list of the path parts.
+    """
+    path_ = fspath(path)
+
+    if isinstance(sep, Pattern):
+        if maxsplit < 0:
+            return sep.split(path_)
+        elif maxsplit == 0:
+            return [path_]
+        elif from_left:
+            return sep.split(path_, maxsplit)
+        else:
+            ls_span = [m.span() for m in sep.finditer(path_)]
+            parts = []
+            start = 0
+            for l, r in ls_span[-maxsplit:]:
+                parts.append(path_[start:l])
+                start = r
+            parts.append(path_[start:])
+            return parts
+    else:
+        realsep: AnyStr
+        if sep is None:
+            if isinstance(path_, str):
+                realsep = syssep
+            else:
+                realsep = syssepb
+        else:
+            realsep = sep
+
+        if from_left:
+            return path_.split(realsep, maxsplit)
+        else:
+            return path_.rsplit(realsep, maxsplit)
+
+
 def clean_parts(parts: list[AnyStr]) -> list[AnyStr]:
     """Cleaning parts (get from `split`) in place: 
         by removing '' and '.', and reducing '..'.
+    😄 Tips: You can use
+        - os.path.normpath
+        - ntpath.normpath
+        - posixpath.normpath
+    instead.
 
     :param parts: The list of path parts.
 
@@ -181,75 +269,50 @@ def clean_parts(parts: list[AnyStr]) -> list[AnyStr]:
     return parts
 
 
-def split(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    sep: Optional[AnyStr] = None, 
-    maxsplit: int = -1, 
-    from_left: bool = False, 
-) -> list[AnyStr]:
-    """Split `path` into a list of parts, using `sep` as the delimiter string.
-
-    :param path: A path to be splitted.
-    :param sep:  The delimiter according which to split the `path`.
-    :param maxsplit: Maximum number of splits to do.
-        -1 (the default value) means no limit.
-    :param from_left: If False (the default), divide from right to left, 
-        otherwise from left to right.
-
-    :return: A list of the path parts.
-    """
-    path_ = fspath(path)
-
-    realsep: AnyStr
-    if sep is None:
-        if isinstance(path_, str):
-            realsep = _sep
-        else:
-            realsep = _sepb
-    else:
-        realsep = sep
-
-    if from_left:
-        return path_.split(realsep, maxsplit)
-    else:
-        return path_.rsplit(realsep, maxsplit)
-
-
-def split_all(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    sep: Optional[AnyStr] = None, 
-) -> list[AnyStr]:
-    """Split `path` into a list of parts, using `sep` as the delimiter string.
-
-    :param path: A path to be splitted.
-    :param sep:  The delimiter according which to split the `path`.
-
-    :return: A list of the path parts (cleaned, using `clean_parts`).
-    """
+def normalize_ntpath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
     path_: AnyStr = fspath(path)
-
-    realsep: AnyStr
-    if sep is None:
-        if isinstance(path_, str):
-            realsep = _sep
-        else:
-            realsep = _sepb
+    drive: AnyStr
+    drive, path_ = ntpath.splitdrive(path_)
+    if isinstance(path_, str):
+        return drive + ntsep.join(clean_parts(split(path_, cre_nt_seps)))
     else:
-        realsep = sep
+        return drive + ntsepb.join(clean_parts(split(path_, creb_nt_seps)))
 
-    return clean_parts(path_.split(realsep))
+
+def normalize_posixpath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
+    path_: AnyStr = fspath(path)
+    if isinstance(path_, str):
+        return posixsep.join(clean_parts(split(path_, posixsep)))
+    else:
+        return posixsepb.join(clean_parts(split(path_, posixsepb)))
+
+
+def normalize_path(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
+    if syspath is ntpath:
+        return normalize_ntpath(path)
+    elif syspath is posixpath:
+        return normalize_posixpath(path)
+    else:
+        raise NotImplementedError
 
 
 def relative_path(
     path: Union[AnyStr, PathLike[AnyStr]], 
     pathto: Union[AnyStr, PathLike[AnyStr]], 
     sep: Optional[AnyStr] = None, 
-):
+) -> AnyStr:
     """Return the relative path from `path` to `pathto`.
-
     Definition:
         The *relative path from path1 to path2* is that, under the same 
         working directory, the relative path from path1 to path2.
+    😄 Tips: You can use 
+        - `os.path.relpath`
+        - `ntpath.relpath`
+        - `posixpath.relpath` 
+    instead.
 
     :param path:   The start path. 
     :param pathto: The end path.
@@ -263,9 +326,9 @@ def relative_path(
     realsep: AnyStr
     if sep is None:
         if isinstance(path1, str):
-            realsep = _sep
+            realsep = syssep
         else:
-            realsep = _sepb
+            realsep = syssepb
     else:
         realsep = sep
 
@@ -278,10 +341,10 @@ def relative_path(
         else:
             return b""
 
-    parts_org = split_all(path1, realsep)
-    parts_dst = split_all(path2, realsep)
+    parts_org: list[AnyStr] = clean_parts(split(path1, realsep))
+    parts_dst: list[AnyStr] = clean_parts(split(path2, realsep))
 
-    i = 0
+    i: int = 0
     for p1, p2 in zip(parts_org, parts_dst):
         if p1 != p2:
             break
@@ -293,10 +356,11 @@ def relative_path(
     else:
         pardir = b".."
 
-    return realsep.join((
-        *(pardir,)*(len(parts_org)-i-1),
-        *parts_dst[i:],
-    ))
+    parts: tuple = (
+        *((pardir,) * (len(parts_org)-i-1)), 
+        *parts_dst[i:]
+    )
+    return realsep.join(parts)
 
 
 def reference_path(
@@ -327,9 +391,9 @@ def reference_path(
     realsep: AnyStr
     if sep is None:
         if isinstance(path1, str):
-            realsep = _sep
+            realsep = syssep
         else:
-            realsep = _sepb
+            realsep = syssepb
     else:
         realsep = sep
 
@@ -339,123 +403,81 @@ def reference_path(
     return realsep.join(clean_parts(parts))
 
 
-def to_ntpath(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    sep: Optional[AnyStr] = None, 
-) -> AnyStr:
-    "Replace the path separator `sep` with '\\' in `path`."
+def path_posix_to_nt(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
     path_: AnyStr = fspath(path)
-
-    realsep: AnyStr
-    if sep is None:
-        if syspath is ntpath:
-            return path_
-        if isinstance(path_, str):
-            realsep = _sep
+    drive: AnyStr
+    if isinstance(path_, str):
+        match_drive = cre_nt_drive.match(path_)
+        if match_drive:
+            drive = match_drive["drive"] + ":"
+            path_ = path_[match_drive.end():]
         else:
-            realsep = _sepb
+            drive = ""
+        if cre_nt_name_na_chars.search(path_):
+            raise ValueError("Unable convert path to nt: %r" % path)
+        return drive + path_.replace(posixsep, ntsep)
     else:
-        realsep = sep
-
-    if isinstance(path_, str):
-        return path_.replace(realsep, "\\")
-    else:
-        return path_.replace(realsep, b"\\")
-
-
-# change path separator
-def to_posixpath(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    sep: Optional[AnyStr] = None, 
-) -> AnyStr:
-    "Replace the path separator `sep` with '/' in `path`."
-    path_: AnyStr = fspath(path)
-
-    realsep: AnyStr
-    if sep is None:
-        if syspath is posixpath:
-            return path_
-        if isinstance(path_, str):
-            realsep = _sep
+        match_drive = creb_nt_drive.match(path_)
+        if match_drive:
+            drive = match_drive["drive"] + b":"
+            path_ = path_[match_drive.end():]
         else:
-            realsep = _sepb
-    else:
-        realsep = sep
-
-    if isinstance(path_, str):
-        return path_.replace(realsep, "/")
-    else:
-        return path_.replace(realsep, b"/")
+            drive = b""
+        if creb_nt_name_na_chars.search(path_):
+            raise ValueError("Unable convert path to nt: %r" % path)
+        return drive + path_.replace(posixsepb, ntsepb)
 
 
-def to_syspath(
-    path: Union[AnyStr, PathLike[AnyStr]], 
-    sep: AnyStr, 
-) -> AnyStr:
-    "Replace the path separator `sep` with `os.path.sep` in `path`."
-    path_: AnyStr = fspath(path)
-    if isinstance(path_, str):
-        return path_.replace(sep, _sep)
-    else:
-        return path_.replace(sep, _sepb)
-
-
-def ntpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
-    "Replace the path separator `\\` with `os.path.sep` in `path`."
-    path_: AnyStr = fspath(path)
-    if isinstance(path_, str):
-        return path_.replace("\\", _sep)
-    else:
-        return path_.replace(b"\\", _sepb)
-
-
-
-# \/:*?"<>|
-# windows \/ -> posix /
-# if \:*?"<>| in posix path, raise ValueError 
-
-# os.path.commonpath, commonprefix, 
-# path.relpath
-# path.normpath
-
-
-def nt_validate(path):
-    # (drive:[\\/])?([\\/:*?"<>|]+[\\/])*[\\/:*?"<>|]+
-
-
-cre_ntsep = re_compile("\\/")
-cre_ntsepb = re_compile(b"\\/")
-
-# import nturl2path
-
-# nturl2path.pathname2url
 def path_nt_to_posix(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
-    path_ = fspath(path)
-    # isabs
-    //path -> \\path
-    /drive/path -> drive/path
-    path/ -> path\\
-    if isinstance(path_, str):
-        newsep = "\\"
-        cre_oldsep = cre_ntsep
-    else:
-        newsep = b"/"
-        cre_oldsep = cre_ntsepb
-    parts = cre_oldsep.split(path_)
-
-
-# nturl2path.url2pathname
-def path_posix_to_nt():
-
-
-# how to process ntpath drive?
-# how to process chars na in nt?
-# ntpath ignore case
-def posixpath_to_syspath(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
-    "Replace the path separator `/` with `os.path.sep` in `path`."
+    ""
     path_: AnyStr = fspath(path)
+    drive: AnyStr
+    drive, path_ = ntpath.splitdrive(path_)
     if isinstance(path_, str):
-        return path_.replace("/", _sep)
+        prefix = "///" + drive if drive else ""
+        return prefix + path_.replace(ntsep, posixsep)
     else:
-        return path_.replace(b"/", _sepb)
+        prefix = b"///" + drive if drive else b""
+        return prefix + path_.replace(ntsepb, posixsepb)
+
+
+def path_to_nt(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
+    if syspath is ntpath:
+        return fspath(path)
+    elif syspath is posixpath:
+        return path_posix_to_nt(path)
+    else:
+        raise NotImplementedError
+
+
+def path_to_posix(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
+    if syspath is posixpath:
+        return fspath(path)
+    elif syspath is ntpath:
+        return path_nt_to_posix(path)
+    else:
+        raise NotImplementedError
+
+
+def path_nt_to_sys(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
+    if syspath is ntpath:
+        return fspath(path)
+    elif syspath is posixpath:
+        return path_nt_to_posix(path)
+    else:
+        raise NotImplementedError
+
+
+def path_posix_to_sys(path: Union[AnyStr, PathLike[AnyStr]]) -> AnyStr:
+    ""
+    if syspath is posixpath:
+        return fspath(path)
+    elif syspath is ntpath:
+        return path_posix_to_nt(path)
+    else:
+        raise NotImplementedError
 
