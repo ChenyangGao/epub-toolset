@@ -11,70 +11,18 @@ import posixpath
 
 from dataclasses import dataclass, field
 from os import fsdecode, PathLike
+from typing import ItemsView
 from typing import Iterator, MutableMapping, NamedTuple, Optional, Union
 
 from urllib.parse import quote, unquote, urlparse
 from util.pathutils import reference_path, relative_path, starting_dir, to_posixpath
 
+from util.mapper import Mapper
 from util.mimetype import guess_mimetype
 from util.makeid import makeid
 from util.opfparser import OpfParser
 
 import unicodedata
-
-
-
-# https://www.w3.org/publishing/epub3/epub-packages.html#sec-package-elem
-
-# TODO: 😂 我认为，对OPF的操作，应该是对DOM树的操作
-
-@dataclass
-class MetadataElement:
-    name: str
-    attrib: dict = field(default_factory=dict)
-    content: str = ""
-
-
-@dataclass
-class ManifestItem:
-    id: str
-    href: str
-    media_type: str = "application/octet-stream"
-    fallback: Optional[str] = None
-    media_overlay: Optional[str] = None
-    properties: Optional[str] = None
-
-
-@dataclass
-class SpineItemref:
-    idref: str
-    id: Optional[str] = None
-    linear: Optional[str] = None
-    properties: Optional[str] = None
-
-
-@dataclass
-class GuideItem:
-    type: str
-    title: str
-    href: str
-
-    @property
-    def parsed_href(self):
-        return urlparse(self.href)
-
-
-@dataclass
-class BindingsItem:
-    mediatype
-    handler
-
-
-@dataclass
-class CollectionItem:
-    ...
-
-
 
 
 def _unicodestr(p):
@@ -279,14 +227,16 @@ class OpfPathOp:
         return item
 
 
+
+
 class OpfWrapper(OpfParser, OpfIter, OpfPathOp):
 
     def __init__(self, ebook_root: str = ""):
         super().__init__(ebook_root)
 
         # invert key dictionaries to allow for reverse access
-        self.href_to_id = {v: k for k, v in self.id_to_href.items()}
-        self.bookpath_to_id = {v: k for k, v in self.id_to_bookpath.items()}
+        self.href_to_id = Mapper((m.href, k) for k, m in ItemsView(self.manifest))
+        self.bookpath_to_id = Mapper((m.bookpath, k) for k, m in ItemsView(self.manifest))
 
         # walk the ebook directory tree building up initial list of
         # all unmanifested (other) files
@@ -641,6 +591,7 @@ class OpfWrapper(OpfParser, OpfIter, OpfPathOp):
             overlay = None
         if id not in self.id_to_href:
             raise WrapperException('Id does not exist in manifest')
+
         del self.id_to_properties[id]
         del self.id_to_fallback[id]
         del self.id_to_overlay[id]
@@ -648,9 +599,4 @@ class OpfWrapper(OpfParser, OpfIter, OpfPathOp):
         self.id_to_fallback[id] = fallback
         self.id_to_overlay[id] = overlay
         self.modified[self.opf_bookpath] = 'file'
-
-
-
-
-
 

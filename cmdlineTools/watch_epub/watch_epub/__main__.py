@@ -95,7 +95,7 @@ from util.ziputils import zip as makezip
 
 
 # Refer to the rules of [.gitignore](https://git-scm.com/docs/gitignore)
-IGNORES = (".DS_store", "Thumb.store", "desktop.ini", "._*")
+IGNORES = ("META-INF/", "mimetype", ".DS_store", "Thumb.store", "desktop.ini", "._*")
 
 @contextmanager
 def ctx_epub_tempdir(path: str, is_inplace: bool = False, ignore = None):

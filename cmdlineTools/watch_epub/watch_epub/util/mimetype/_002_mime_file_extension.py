@@ -65,6 +65,9 @@ ext_to_mimes = {
     ".abc": [
         "text/vnd.abc"
     ],
+    ".abs": [
+        "audio/x-mpeg"
+    ],
     ".abw": [
         "application/x-abiword"
     ],
@@ -155,6 +158,9 @@ ext_to_mimes = {
     ".ani": [
         "application/x-navi-animation"
     ],
+    ".anx": [
+        "application/annodex"
+    ],
     ".aos": [
         "application/x-nokia-9000-communicator-add-on-software"
     ],
@@ -238,6 +244,9 @@ ext_to_mimes = {
     ".atx": [
         "application/vnd.antix.game-component"
     ],
+    ".axa": [
+        "audio/annodex"
+    ],
     ".axs": [
         "application/olescript"
     ],
@@ -255,6 +264,9 @@ ext_to_mimes = {
     ],
     ".avs": [
         "video/avs-video"
+    ],
+    ".avx": [
+        "video/x-rad-screenplay"
     ],
     ".aw": [
         "application/applixware"
@@ -307,7 +319,11 @@ ext_to_mimes = {
     ],
     ".bmp": [
         "image/bmp",
-        "image/x-windows-bmp"
+        "image/x-windows-bmp",
+        "image/x-ms-bmp"
+    ],
+    ".body": [
+        "text/html"
     ],
     ".boo": [
         "application/book"
@@ -320,6 +336,9 @@ ext_to_mimes = {
     ],
     ".boz": [
         "application/x-bzip2"
+    ],
+    ".bpk": [
+        "application/octet-stream"
     ],
     ".bsh": [
         "application/x-bsh"
@@ -530,8 +549,8 @@ ext_to_mimes = {
         "image/cis-cod"
     ],
     ".com": [
-        "application/x-msdos-program",
-        "application/x-msdownload"
+        "application/x-msdownload",
+        "application/x-msdos-program"
     ],
     ".conf": [
         "text/plain"
@@ -719,6 +738,7 @@ ext_to_mimes = {
         "application/vnd.dna"
     ],
     ".doc": [
+        "application/vnd.ms-word",
         "application/msword"
     ],
     ".docm": [
@@ -1492,6 +1512,10 @@ ext_to_mimes = {
     ".jisp": [
         "application/vnd.jisp"
     ],
+    ".jl": [
+        "text/x-julia",
+        "text/x-script.julia"
+    ],
     ".jlt": [
         "application/vnd.hp-jlyt"
     ],
@@ -1529,12 +1553,18 @@ ext_to_mimes = {
         "application/javascript",
         "text/javascript"
     ],
+    ".jsf": [
+        "text/plain"
+    ],
     ".json": [
         "application/json",
         "text/plain"
     ],
     ".jsonml": [
         "application/jsonml+json"
+    ],
+    ".jspf": [
+        "text/plain"
     ],
     ".jut": [
         "image/jutvision"
@@ -1761,6 +1791,9 @@ ext_to_mimes = {
     ".ma": [
         "application/mathematica"
     ],
+    ".mac": [
+        "image/x-macpaint"
+    ],
     ".mads": [
         "application/mads+xml"
     ],
@@ -1871,15 +1904,16 @@ ext_to_mimes = {
         "message/rfc822"
     ],
     ".mid": [
+        "audio/sp-midi",
         "application/x-midi",
         "audio/midi",
         "audio/x-mid",
         "audio/x-midi",
-        "audio/sp-midi",
         "music/crescendo",
         "x-music/x-midi"
     ],
     ".midi": [
+        "audio/sp-midi",
         "application/x-midi",
         "audio/midi",
         "audio/x-mid",
@@ -1974,9 +2008,12 @@ ext_to_mimes = {
     ".movie": [
         "video/x-sgi-movie"
     ],
+    ".mp1": [
+        "audio/mpeg"
+    ],
     ".mp2": [
-        "video/mpeg",
         "audio/mpeg",
+        "video/mpeg",
         "video/x-mpeg",
         "audio/x-mpeg",
         "video/x-mpeq2a"
@@ -2010,6 +2047,7 @@ ext_to_mimes = {
         "video/mp4"
     ],
     ".mpa": [
+        "audio/mpeg",
         "video/mpeg"
     ],
     ".mpc": [
@@ -2020,6 +2058,10 @@ ext_to_mimes = {
     ],
     ".mpeg": [
         "video/mpeg"
+    ],
+    ".mpega": [
+        "audio/mpeg",
+        "audio/x-mpeg"
     ],
     ".mpg": [
         "video/mpeg",
@@ -2048,6 +2090,9 @@ ext_to_mimes = {
     ],
     ".mpv": [
         "application/x-project"
+    ],
+    ".mpv2": [
+        "video/mpeg2"
     ],
     ".mpx": [
         "application/x-project"
@@ -2439,7 +2484,8 @@ ext_to_mimes = {
         "application/vnd.hp-pclxl"
     ],
     ".pct": [
-        "image/x-pict"
+        "image/x-pict",
+        "image/pict"
     ],
     ".pcurl": [
         "application/vnd.curl.pcurl"
@@ -2484,9 +2530,11 @@ ext_to_mimes = {
         "text/x-php"
     ],
     ".pic": [
-        "image/x-pict"
+        "image/x-pict",
+        "image/pict"
     ],
     ".pict": [
+        "image/x-pict",
         "image/pict"
     ],
     ".pkg": [
@@ -2516,7 +2564,8 @@ ext_to_mimes = {
         "application/vnd.pocketlearn"
     ],
     ".pls": [
-        "application/pls+xml"
+        "application/pls+xml",
+        "audio/x-scpls"
     ],
     ".plx": [
         "application/x-pixclscript"
@@ -2554,6 +2603,9 @@ ext_to_mimes = {
     ".pnm": [
         "image/x-portable-anymap",
         "application/x-portable-anymap"
+    ],
+    ".pnt": [
+        "image/x-macpaint"
     ],
     ".pnz": [
         "image/png"
@@ -2675,12 +2727,14 @@ ext_to_mimes = {
         "application/vnd.ms-powerpoint"
     ],
     ".py": [
+        "text/x-python",
         "text/x-script.phyton"
     ],
     ".pya": [
         "audio/vnd.ms-playready.media.pya"
     ],
     ".pyc": [
+        "application/x-python-code",
         "applicaiton/x-bytecode.python"
     ],
     ".pyo": [
@@ -2752,7 +2806,9 @@ ext_to_mimes = {
         "audio/x-pn-realaudio"
     ],
     ".rar": [
-        "application/x-rar-compressed"
+        "application/x-rar-compressed",
+        "application/x-rar",
+        "application/vnd.rar"
     ],
     ".ras": [
         "image/x-cmu-raster",
@@ -2761,6 +2817,10 @@ ext_to_mimes = {
     ],
     ".rast": [
         "image/cmu-raster"
+    ],
+    ".rb": [
+        "text/x-ruby",
+        "text/x-script.ruby"
     ],
     ".rcprofile": [
         "application/vnd.ipunplugged.rcprofile"
@@ -2882,11 +2942,18 @@ ext_to_mimes = {
     ".rtf": [
         "application/rtf",
         "application/x-rtf",
-        "text/richtext"
+        "text/richtext",
+        "text/rtf"
+    ],
+    ".rtfd": [
+        "application/rtf",
+        "application/x-rtf",
+        "text/richtext",
+        "text/rtfd"
     ],
     ".rtx": [
-        "text/richtext",
-        "application/rtf"
+        "application/rtx",
+        "text/richtext"
     ],
     ".ruleset": [
         "application/xml"
@@ -3025,7 +3092,8 @@ ext_to_mimes = {
         "application/x-bsh",
         "application/x-shar",
         "text/x-sh",
-        "text/x-script.sh"
+        "text/x-script.sh",
+        "text/x-shellscript"
     ],
     ".shar": [
         "application/x-shar",
@@ -3183,7 +3251,9 @@ ext_to_mimes = {
         "audio/ogg"
     ],
     ".sql": [
-        "application/x-sql"
+        "application/sql",
+        "application/x-sql",
+        "text/x-sql"
     ],
     ".src": [
         "application/x-wais-source"
@@ -3504,6 +3574,9 @@ ext_to_mimes = {
     ],
     ".uil": [
         "text/x-uil"
+    ],
+    ".ulw": [
+        "audio/basic"
     ],
     ".ulx": [
         "application/x-glulx"

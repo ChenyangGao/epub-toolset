@@ -12,9 +12,12 @@ import os
 import os.path as syspath
 import posixpath
 
+from os import fsdecode, PathLike
 from re import search as re_search
+from typing import AnyStr
 from urllib.parse import unquote
 
+from util.light_xml_parser import fromstring
 from util.mapper import Mapper
 from util.pathutils import reference_path, path_posix_to_sys
 
@@ -30,81 +33,101 @@ SPECIAL_HANDLING_TYPES = ["xmlheader", "doctype", "comment"]
 _OPF_PARENT_TAGS = [
     "package", "metadata", "dc-metadata", "x-metadata", 
     "manifest", "spine", "tours", "guide", "bindings", 
+    "collection"
 ]
 
 
-def get_opf_bookpath(ebook_root: str = ""):
-    path_to_container_xml = syspath.join(ebook_root, "META-INF", "container.xml")
-    xml_data = open(path_to_container_xml, "rb").read()
-    match = re_search(
-        b'<rootfile\\s[^>]*?media-type="application/oebps-package\+xml"[^>]*', xml_data)
-    if match is not None:
-        submatch = re_search(b'\\sfull-path="([^"]+)', match[0])
-        if submatch is not None:
-            return unquote(submatch[1])
-    raise ValueError("The opf file path is not defined")
+
+# https://www.w3.org/publishing/epub3/epub-packages.html#sec-package-elem
+
+# TODO: 😂 我认为，对OPF的操作，应该是对DOM树的操作
+
+
+@dataclass
+class MetadataElement:
+    name: str
+    attrib: dict = field(default_factory=dict)
+    content: str = ""
+
+
+@dataclass
+class ManifestItem:
+    id: str
+    href: str
+    media_type: str = "application/octet-stream"
+    fallback: Optional[str] = None
+    media_overlay: Optional[str] = None
+    properties: Optional[str] = None
+
+
+@dataclass
+class SpineItemref:
+    idref: str
+    id: Optional[str] = None
+    linear: Optional[str] = None
+    properties: Optional[str] = None
+
+
+@dataclass
+class GuideItem:
+    type: str
+    title: str
+    href: str
+
+    @property
+    def parsed_href(self):
+        return urlparse(self.href)
+
+
+@dataclass
+class BindingsItem:
+    mediatype
+    handler
+
+
+@dataclass
+class CollectionItem:
+    ...
+
+
+# TODO: 用正则表达式实现，或者使用jsonpath
+def get_opf_bookpath(ebook_root: AnyStr | PathLike[AnyStr] = "") -> str:
+    path_to_container_xml = syspath.join(
+        fsdecode(ebook_root), "META-INF", "container.xml")
+    tree = fromstring(open(path_to_container_xml, "r", encoding="utf-8").read())
+    # > See: https://www.w3.org/publishing/epub32/epub-ocf.html#sec-container-metainf-container.xml
+    # An OCF Processor *MUST* consider the first **rootfile** element within the **rootfiles** element 
+    # to represent the [Default Rendition](https://www.w3.org/publishing/epub32/epub-ocf.html#dfn-default-rendition) 
+    # for the contained EPUB Publication. [Reading Systems](https://www.w3.org/publishing/epub32/epub-spec.html#dfn-epub-reading-system) 
+    # are *REQUIRED* to present the Default Rendition, but *MAY* present other Renditions in the container.
+    try:
+        return matched[0].attrib["full-path"]
+    except (IndexError, KeyError):
+        raise ValueError("The OPF file path is not defined in OCF file")
 
 
 class OpfParser:
 
-    def __init__(self, ebook_root: str = ""):
-        ebook_root = self.ebook_root = syspath.realpath(ebook_root)
-        self.opf_bookpath = opf_bookpath = get_opf_bookpath(ebook_root)
-        self.opf_path = opf_path = self.get_path(opf_bookpath)
+    def __init__(self, ebook_root: AnyStr | PathLike[AnyStr] = ""):
+        self.ebook_root = fsdecode(syspath.realpath(ebook_root))
+        opf_bookpath = self.opf_bookpath = get_opf_bookpath(ebook_root)
+        opf_path = self.opf_path = self.get_path(opf_bookpath)
         self.opf_dir, self.opf_name = posixpath.split(opf_bookpath)
         if self.opf_dir:
             self.opf_dir += "/"
         self.opf = open(opf_path, "r", encoding="utf-8").read()
+        self._opf_etree = fromstring(self.opf)
 
-        self.opos = 0
         self.package = None
-
-        # list of (tname, tattr, tcontent)
         self.metadata = []
-        self.metadata_attr = None
-        self.cover_id = None
-
-        self.manifest = {}
-        self.spine = {}
-        self.spine_ppd = None
-        # list of (type, title, href)
+        self.manifest = Mapper()
+        self.spine = Mapper()
         self.guide = []
-        # list of (media-type, handler)
         self.bindings = []
+        self.collections = []
 
         self._parseData()
 
-    # OPF tag iterator
-    def _opf_tag_iter(self):
-        tcontent = last_tattr = None
-        prefix = []
-        while True:
-            text, tag = self._parseopf()
-            if text is None and tag is None:
-                break
-            if text is not None:
-                tcontent = text.rstrip(" \t\v\f\r\n")
-            else:  # we have a tag
-                ttype, tname, tattr = self._parsetag(tag)
-                if ttype == "begin":
-                    tcontent = None
-                    prefix.append(tname)
-                    if tname in _OPF_PARENT_TAGS:
-                        yield ".".join(prefix), tname, tattr, tcontent
-                    else:
-                        last_tattr = tattr
-                else:  # single or end
-                    if ttype == "end":
-                        prefix.pop()
-                        tattr = last_tattr
-                        if tattr is None:
-                            tattr = dict()
-                        last_tattr = None
-                    elif ttype == 'single':
-                        tcontent = None
-                    if ttype == 'single' or (ttype == 'end' and tname not in _OPF_PARENT_TAGS):
-                        yield ".".join(prefix), tname, tattr, tcontent
-                    tcontent = None
 
     # now parse the OPF to extract manifest, spine , and metadata
     def _parseData(self):
@@ -112,6 +135,7 @@ class OpfParser:
         for prefix, tname, tattr, tcontent in self._opf_tag_iter():
             # package
             if tname == "package":
+                # TODO: 默认版本改成3.0
                 ver = tattr.pop("version", "2.0")
                 uid = tattr.pop("unique-identifier", "bookid")
                 self.package = (ver, uid, tattr)
@@ -122,8 +146,6 @@ class OpfParser:
                 continue
             if tname in ["meta", "link"] or tname.startswith("dc:") and "metadata" in prefix:
                 self.metadata.append((tname, tattr, tcontent))
-                if tattr.get("name", "") == "cover":
-                    self.cover_id = tattr.get("content", None)
                 continue
             # manifest
             # Note: manifest hrefs when relative may not contain a fragment
@@ -150,17 +172,15 @@ class OpfParser:
                 bookpath = ""
                 if href.find(":") == -1:
                     bookpath = reference_path(self.opf_dir, href, "/")
+
                 self.id_to_bookpath[id] = bookpath
                 self.id_to_mime[id] = mtype
                 self.id_to_properties[id] = properties
                 self.id_to_fallback[id] = fallback
                 self.id_to_overlay[id] = overlay
+
                 continue
             # spine
-            if tname == "spine":
-                if tattr is not None:
-                    self.spine_ppd = tattr.get("page-progression-direction", None)
-                continue
             if tname == "itemref" and "spine" in prefix:
                 idref = tattr.pop("idref", "")
                 linear = tattr.pop("linear", None)
@@ -183,113 +203,6 @@ class OpfParser:
                 handler = tattr.pop("handler", "")
                 self.bindings.append((mtype, handler))
                 continue
-
-    # parse and return either leading text or the next tag
-    def _parseopf(self):
-        p = self.opos
-        if p >= len(self.opf):
-            return None, None
-        if self.opf[p] != '<':
-            res = self.opf.find('<', p)
-            if res == -1 :
-                res = len(self.opf)
-            self.opos = res
-            return self.opf[p:res], None
-        # handle comment as a special case
-        if self.opf[p:p + 4] == '<!--':
-            te = self.opf.find('-->', p + 1)
-            if te != -1:
-                te = te + 2
-        else:
-            te = self.opf.find('>', p + 1)
-            ntb = self.opf.find('<', p + 1)
-            if ntb != -1 and ntb < te:
-                self.opos = ntb
-                return self.opf[p:ntb], None
-        self.opos = te + 1
-        return None, self.opf[p:te + 1]
-
-    # parses tag to identify:  [tname, ttype, tattr]
-    #    tname: tag name
-    #    ttype: tag type ('begin', 'end' or 'single')
-    #    tattr: dictionary of tag atributes
-    def _parsetag(self, s):
-        n = len(s)
-        p = 1
-        tname = None
-        ttype = None
-        tattr = dict()
-        while p < n and s[p:p + 1] == ' ' : p += 1
-        if s[p:p + 1] == '/':
-            ttype = 'end'
-            p += 1
-            while p < n and s[p:p + 1] == ' ' : p += 1
-        b = p
-        # handle comment special case as there may be no spaces to
-        # delimit name begin or end
-        if s[b:].startswith('!--'):
-            p = b + 3
-            tname = '!--'
-            ttype, backstep = SPECIAL_HANDLING_TAGS[tname]
-            tattr['special'] = s[p:backstep].strip()
-            return tname, ttype, tattr
-        while p < n and s[p:p + 1] not in ('>', '/', ' ', '"', "'", "\r", "\n") : p += 1
-        tname = s[b:p].lower()
-        # remove redundant opf: namespace prefixes on opf tags
-        if tname.startswith("opf:"):
-            tname = tname[4:]
-        # more special cases
-        if tname == '!doctype':
-            tname = '!DOCTYPE'
-        if tname in SPECIAL_HANDLING_TAGS:
-            ttype, backstep = SPECIAL_HANDLING_TAGS[tname]
-            tattr['special'] = s[p:backstep]
-        if ttype is None:
-            # parse any attributes of begin or single tags
-            while s.find('=', p) != -1 :
-                while p < n and s[p:p + 1] == ' ' : p += 1
-                b = p
-                while p < n and s[p:p + 1] != '=' : p += 1
-                aname = s[b:p].lower()
-                aname = aname.rstrip(' ')
-                p += 1
-                while p < n and s[p:p + 1] == ' ' : p += 1
-                if s[p:p + 1] in ('"', "'") :
-                    qt = s[p:p + 1]
-                    p = p + 1
-                    b = p
-                    while p < n and s[p:p + 1] != qt: p += 1
-                    val = s[b:p]
-                    p += 1
-                else :
-                    b = p
-                    while p < n and s[p:p + 1] not in ('>', '/', ' '): p += 1
-                    val = s[b:p]
-                tattr[aname] = val
-        if ttype is None:
-            ttype = 'begin'
-            if s.find('/', p) >= 0:
-                ttype = 'single'
-        return ttype, tname, tattr
-
-    def handle_quoted_attribute_values(self, value):
-        if '"' in value:
-            value = value.replace('"', "&quot;")
-        return value
-
-    def taginfo_toxml(self, taginfo):
-        res = []
-        tname, tattr, tcontent = taginfo
-        res.append('<' + tname)
-        if tattr is not None:
-            for key in tattr:
-                val = self.handle_quoted_attribute_values(tattr[key])
-                res.append(' ' + key + '="' + val + '"')
-        if tcontent is not None:
-            res.append('>' + tcontent + '</' + tname + '>\n')
-        else:
-            res.append('/>\n')
-        return "".join(res)
 
     @property
     def epub_version(self):
@@ -326,8 +239,9 @@ class OpfParser:
 
 
 
-    def id_to_bookhref(self, id):
-        return self.manifest[id].bookhref
+
+    def id_to_href(self, id):
+        return self.manifest[id].href
 
     def id_to_bookpath(self, id):
         return self.manifest[id].bookpath

@@ -258,7 +258,7 @@ def ignore(
     """
     if callable(pats):
         fn = pats
-    elif isinstance(pats, tuple):
+    elif isinstance(pats, Sequence):
         fn = make_ignore(*pats)
     else:
         fn = make_ignore(pats)
