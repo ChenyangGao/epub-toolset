@@ -202,6 +202,7 @@ if __name__ == "__main__":
 
     ignore = make_ignore(*IGNORES)
 
+    # TODO: merge to watch.py
     with ctx_epub_tempdir(
         epub_path, 
         is_inplace=is_inplace, 
@@ -214,6 +215,6 @@ if __name__ == "__main__":
             opf_dir = "."
         openpath(opf_dir)
         chdir(opf_dir)
-        watch(tempdir, wrapper=wrapper, logger=logger, ignore=ignore)
+        watch(wrapper, logger=logger, ignore=ignore)
         chdir(oldwd) 
 
