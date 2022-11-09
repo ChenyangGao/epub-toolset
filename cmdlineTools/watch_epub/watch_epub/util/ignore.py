@@ -10,7 +10,7 @@ __all__ = ["escape", "translate", "make_ignore", "ignore", "read_file"]
 
 from os import PathLike
 from re import compile as re_compile, escape as re_escape, Match, Pattern
-from typing import AnyStr, Callable, Final, Sequence
+from typing import AnyStr, Callable, Final, Iterable
 
 
 cre_stars: Final[Pattern[str]] = re_compile("\*{2,}")
@@ -142,7 +142,6 @@ def make_ignore(
     *pats: AnyStr, 
 ) -> Callable[[AnyStr], bool]:
     ""
-    re_pat: AnyStr
     not_: AnyStr
     if isinstance(pat, str):
         not_ = "!"
@@ -163,7 +162,7 @@ def make_ignore(
 
 
 def ignore(
-    pats: AnyStr | Sequence[AnyStr] | Callable[[AnyStr], bool], 
+    pats: AnyStr | Iterable[AnyStr] | Callable[[AnyStr], bool], 
     path: AnyStr, 
 ) -> bool:
     """
@@ -258,10 +257,10 @@ def ignore(
     """
     if callable(pats):
         fn = pats
-    elif isinstance(pats, Sequence):
-        fn = make_ignore(*pats)
-    else:
+    elif isinstance(pats, (str, bytes)):
         fn = make_ignore(pats)
+    else:
+        fn = make_ignore(*pats)
     return fn(path)
 
 

@@ -41,9 +41,10 @@ if __name__ == "__main__":
         "不指定此参数（默认行为）时，会生成一个新文件，而不是覆盖。")
     parser.add_argument("-d", "--debug", action="store_true", help="启用调试信息。"
         "如果指定此参数，会将日志级别设置为 DEBUG（否则，默认为 INFO）。")
-    parser.add_argument("-m", "--makeid", default="basename", choices=TYPE_TO_MAKEID, 
+    makeid_default = next(iter(TYPE_TO_MAKEID))
+    parser.add_argument("-m", "--makeid", default=makeid_default, choices=TYPE_TO_MAKEID, 
     help="""新文件在 OPF 中的 id。
-可选以下值，默认为 basename：""" + "".join(
+可选以下值，默认为 %s：""" % makeid_default + "".join(
         "\n    %s: %s" % (typ, fn.__doc__) for typ, fn in TYPE_TO_MAKEID.items()))
     args = parser.parse_args()
     if args.epub_path is None:
@@ -53,6 +54,8 @@ import sys
 
 if sys.version_info < (3, 10):
     raise SystemExit("Python 版本不得低于 3.10，你的版本是\n%s" % sys.version)
+
+from typing import Optional
 
 def ensure_module(
     module, 
@@ -84,6 +87,7 @@ from pkgutil import get_data
 from tempfile import TemporaryDirectory
 from re import sub as re_sub
 from string import Template
+from typing import Iterable
 from time import time_ns
 from uuid import uuid4
 from zipfile import ZipFile
@@ -95,10 +99,20 @@ from util.ziputils import zip as makezip
 
 
 # Refer to the rules of [.gitignore](https://git-scm.com/docs/gitignore)
-IGNORES = ("META-INF/", "mimetype", ".DS_store", "Thumb.store", "desktop.ini", "._*")
+IGNORES = ["META-INF/", "mimetype", ".DS_store", "Thumb.store", "desktop.ini", "._*"]
+
 
 @contextmanager
-def ctx_epub_tempdir(path: str, is_inplace: bool = False, ignore = None):
+def ctx_epub_tempdir(
+    path: str, 
+    is_inplace: bool = False, 
+    ignores: Optional[Iterable[str]] = None, 
+):
+    if ignores is not None:
+        ignore = make_ignore("!/META-INF/", "!/mimetype", *ignores)
+    else:
+        ignore = None
+
     need_make_new = not syspath.exists(path)
     if need_make_new:
         def init_dir(dir_):
@@ -186,17 +200,16 @@ if __name__ == "__main__":
 
     from util.ignore import make_ignore
 
-    ignore = make_ignore(IGNORES)
+    ignore = make_ignore(*IGNORES)
 
     with ctx_epub_tempdir(
         epub_path, 
         is_inplace=is_inplace, 
-        ignore=ignore, 
     ) as tempdir:
         oldwd = getcwd()
         wrapper = OpfWrapper(tempdir)
         chdir(tempdir)
-        opf_dir = wrapper.get_path(wrapper.opf_dir)
+        opf_dir = wrapper.bookpath_to_path(wrapper.opf_dir)
         if not opf_dir:
             opf_dir = "."
         openpath(opf_dir)

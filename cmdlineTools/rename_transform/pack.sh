@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 PROJDIR=`dirname "$0"`
 PROJNAME=`basename ${PROJDIR}`
