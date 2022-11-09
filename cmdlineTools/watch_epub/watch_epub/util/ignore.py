@@ -158,7 +158,7 @@ def make_ignore(
     if not pats:
         return ignore
     ignores = (ignore, *(map(get_ignore, pats)))
-    return lambda path: all(ignore(path) for ignore in ignores)
+    return lambda path: any(ignore(path) for ignore in ignores)
 
 
 def ignore(

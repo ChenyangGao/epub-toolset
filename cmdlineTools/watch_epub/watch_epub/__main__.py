@@ -4,6 +4,9 @@
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
 __version__ = (0, 1, 5)
 
+# Refer to the rules of [gitignore](https://git-scm.com/docs/gitignore)
+IGNORES = [".DS_store", "Thumb.store", "desktop.ini", "._*"]
+
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
     from util.makeid import TYPE_TO_MAKEID
@@ -49,6 +52,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.epub_path is None:
         parser.parse_args(["-h"])
+    parser.add_argument("-n", "--ignore-paths", dest="ignores", default=IGNORES, help="指定一个文件路径，采用类似[gitignore](https://git-scm.com/docs/gitignore)的语法规则，用于过滤文件，默认值：%r" % IGNORES) 
+
 
 import sys
 
@@ -98,21 +103,12 @@ from util.watch import watch
 from util.ziputils import zip as makezip
 
 
-# Refer to the rules of [.gitignore](https://git-scm.com/docs/gitignore)
-IGNORES = ["META-INF/", "mimetype", ".DS_store", "Thumb.store", "desktop.ini", "._*"]
-
-
 @contextmanager
 def ctx_epub_tempdir(
     path: str, 
     is_inplace: bool = False, 
-    ignores: Optional[Iterable[str]] = None, 
+    ignore: Optional[Callable[[str], bool]] = None, 
 ):
-    if ignores is not None:
-        ignore = make_ignore("!/META-INF/", "!/mimetype", *ignores)
-    else:
-        ignore = None
-
     need_make_new = not syspath.exists(path)
     if need_make_new:
         def init_dir(dir_):
@@ -134,29 +130,28 @@ def ctx_epub_tempdir(
         def init_dir(dir_):
             with ZipFile(path) as zf:
                 zf.extractall(dir_)
-
-    dirname, basename = syspath.split(path)
-    if basename.endswith(".epub"):
-        stem = basename[:-len(".epub")]
-    else:
-        stem = basename
-    stem = re_sub("_\d{18,}$", "", stem)
-
+  
     td = TemporaryDirectory()
     try:
         tempdir = td.name
         init_dir(tempdir)
         yield tempdir
-        if need_make_new:
-            target_path = path
-        elif is_inplace:
+        if is_inplace:
             target_path = path
             try:
                 remove(path)
             except FileNotFoundError:
                 pass
-        else:
+        elif isfile(path):
+            dirname, basename = syspath.split(path)
+            if basename.endswith(".epub"):
+                stem = basename[:-len(".epub")]
+            else:
+                stem = basename
+            stem = re_sub("_\d{18,}$", "", stem)
             target_path = syspath.join(dirname, "%s_%.0f.epub" % (stem, time_ns()))
+        else:
+            target_path = path
         while True:
             try:
                 makezip(tempdir, target_path, ignore=ignore)
@@ -179,6 +174,9 @@ def ctx_epub_tempdir(
 
 
 if __name__ == "__main__":
+    # def main(args):
+    #    ...
+
     from util.makeid import set_makeid
 
     set_makeid(args.makeid)
@@ -197,15 +195,16 @@ if __name__ == "__main__":
 
     epub_path = args.epub_path
     is_inplace = args.inplace
+    ignores = args.ignores
 
-    from util.ignore import make_ignore
-
-    ignore = make_ignore(*IGNORES)
+    main_ignore = make_ignore("/META-INF/"
+, "/mimetype")                                sub_ignore = make_ignore(ignores)         ignore = lambda bookpath: main_ignore(bookpath) and sub_ignore(bookpath)
 
     # TODO: merge to watch.py
     with ctx_epub_tempdir(
         epub_path, 
         is_inplace=is_inplace, 
+        ignore=lambda p: not main_ignore(p) or p not in opf_wrapper.bookpath_to_id
     ) as tempdir:
         oldwd = getcwd()
         wrapper = OpfWrapper(tempdir)
@@ -216,5 +215,5 @@ if __name__ == "__main__":
         openpath(opf_dir)
         chdir(opf_dir)
         watch(wrapper, logger=logger, ignore=ignore)
-        chdir(oldwd) 
+        chdir(oldwd)
 

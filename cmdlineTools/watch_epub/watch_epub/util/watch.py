@@ -24,7 +24,7 @@ from os import stat, fsdecode
 from os.path import basename, dirname, realpath, sep
 from re import compile as re_compile, Pattern
 from time import sleep
-from typing import Callable, Final, Optional
+from typing import Callable, Final, Iterable, Optional
 from urllib.parse import quote, unquote, urlparse, urlunparse
 
 from watchdog.events import ( # type: ignore
@@ -554,6 +554,8 @@ class EpubFileEventHandler(FileSystemEventHandler):
             self._update_refby_files(src_bookpath, dest_bookpath, ls_refby)
 
 
+from util.ignore import make_ignore
+
 def watch(
     opfwrapper: OpfWrapper, /, 
     logger: logging.Logger = logging.getLogger("root"), 
@@ -571,9 +573,9 @@ def watch(
             sleep(0.1)
     except KeyboardInterrupt:
         logger.info('Shutting down watching ...')
-        opfwrapper.dump()
     finally:
         observer.stop()
         observer.join()
+    opfwrapper.dump()
     logger.info('Done!')
 
