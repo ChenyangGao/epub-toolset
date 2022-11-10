@@ -18,7 +18,7 @@ import posixpath
 
 from collections import defaultdict, Counter
 from functools import partial
-from html import unescape
+from html import escape, unescape
 from os import stat, fsdecode
 from os.path import realpath
 from re import compile as re_compile, Pattern
@@ -75,6 +75,13 @@ def analyze(bookpath, text, mime=None):
         mime = guess_mimetype(bookpath)
     handler = MIME_REGISTRY[mime]
     return handler(bookpath, text)
+
+
+def update(text, src_bookpath, dest_bookpath, refby_bookpath, typelist):
+    for type_, *_ in typelist:
+        text = OP_REGISTRY[type_](
+            text, src_bookpath, dest_bookpath, refby_bookpath)
+    return text
 
 
 def fileter_localpath(bookpath, hrefs):
@@ -167,7 +174,7 @@ def update_attr_href_src(text, src_bookpath, dest_bookpath, refby_bookpath):
         if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
             start = m.start()
             begin = m.start("link")
-            return text[start:begin] + quote(urlunparse(phref._replace(path=relpath)))
+            return text[:begin-start] + quote(urlunparse(phref._replace(path=relpath)))
         else:
             return text
 
@@ -186,7 +193,10 @@ def update_attr_style(text, src_bookpath, dest_bookpath, refby_bookpath):
         else:
             start, stop = m.span()
             begin, end = m.span("attr")
-            return text[start:begin] + text_attr_new + text[end:stop]
+            text_new = text[:begin-start] + text_attr_new
+            if end < stop:
+                text_new += text[end-stop:]
+            return text_new
 
     def sub_repl(m):
         href = unquote(m[m.lastgroup])
@@ -207,14 +217,17 @@ def update_attr_style(text, src_bookpath, dest_bookpath, refby_bookpath):
 def update_el_style(text, src_bookpath, dest_bookpath, refby_bookpath):
     def repl(m):
         text = m[0]
-        text_attr = m["attr"]
-        text_attr_new = CRE_URL.sub(sub_repl, text_attr)
+        text_el = unescape(m["text"])
+        text_el_new = CRE_URL.sub(sub_repl, text_el)
         if text_attr == text_attr_new:
             return text
         else:
             start, stop = m.span()
-            begin, end = m.span("attr")
-            return text[start:begin] + text_attr_new + text[end:stop]
+            begin, end = m.span("text")
+            text_new = text[:begin-start] + escape(text_el_new)
+            if end < stop:
+                text_new += text[end-stop:]
+            return text_new
 
     def sub_repl(m):
         href = unquote(m[m.lastgroup])
@@ -381,10 +394,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
                     )
                 )
             else:
-                text_new = text
-                for type_, count in typelist:
-                    text_new = OP_REGISTRY[type_](
-                        text_new, src_bookpath, dest_bookpath, refby_bookpath)
+                text_new = update(text, src_bookpath, dest_bookpath, refby_bookpath, typelist)
                 if text != text_new:
                     open(refby_path, "w", encoding="utf-8").write(text_new)
                     self.on_modified(FileModifiedEvent(refby_path))
@@ -584,6 +594,7 @@ def watch(
 
 
 # def read(self, bookpath):
+# file mtime, size, md5
 #     # 还要判断 md5 是否改变
 #     # 只对 reffile 检查 mtime，md5
 #     mtime = self._bookpath_to_mtime[bookpath]
