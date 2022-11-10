@@ -2,12 +2,10 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 1)
+__version__ = (0, 1, 2)
 __all__ = ["watch"]
 
 # TODO: 移动文件到其他文件夹，那么这个文件所引用的那些文件，相对位置也会改变
-# TODO: created 事件时，文件不存在，则文件可能是被移动或删除，则应该注册一个回调，因为事件没有被正确处理
-# TODO: 是否需要忽略那些所在的祖先目录也是隐藏（以'.'为前缀）的文件？
 # TODO: 对于自己引用自己的，如果写出自己文件名的，要更新，但是如果路径是 ""，则忽略
 # TODO: 应该专门写一个类，用来增删改查文件的引用和被引用关系，解除和 EpubFileEventHandler 的耦合
 # TODO: 在 windows 下文件被占用时，因为 PermissionError 不可打开，是否需要等会再去尝试打开，以及尝试多少次？
@@ -20,11 +18,12 @@ import posixpath
 
 from collections import defaultdict, Counter
 from functools import partial
+from html import unescape
 from os import stat, fsdecode
-from os.path import basename, dirname, realpath, sep
+from os.path import realpath
 from re import compile as re_compile, Pattern
 from time import sleep
-from typing import Callable, Final, Iterable, Optional
+from typing import Callable, Final, Optional
 from urllib.parse import quote, unquote, urlparse, urlunparse
 
 from watchdog.events import ( # type: ignore
@@ -33,16 +32,10 @@ from watchdog.events import ( # type: ignore
 from watchdog.observers import Observer # type: ignore
 
 from util.mimetype import guess_mimetype
-from util.pathutils import reference_path, relative_path, path_posix_to_sys, path_to_posix
+from util.pathutils import reference_path, path_posix_to_sys
 from util.opfwrapper import OpfWrapper
 
 
-PROTECTED_FILES = ["META-INF/", "mimetype"]
-MIMES_OF_TEXT = ("text/html", "application/xhtml+xml", "application/x-dtbncx+xml")
-MIMES_OF_STYLES = ("text/css",)
-
-#
-CRE_PROT: Final[Pattern] = re_compile(r'^\w+://')
 #
 CRE_REF: Final[Pattern] = re_compile(
     r'(<[^/][^>]*?[\s:](?:href|src)=")(?P<link>[^>"]+)')
@@ -51,75 +44,199 @@ CRE_URL: Final[Pattern] = re_compile(
     r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|'
     r'\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
 #
-CRE_EL_STYLE: Final[Pattern] = re_compile(
-    r'<style(?:\s[^>]*|)>((?s:.+?))</style>')
+CRE_EL_STYLE: Final[Pattern] = re_compile(r"<style\b[^>]*>(?P<text>[\s\S]+?)</style>")
 #
-CRE_INLINE_STYLE: Final[Pattern] = re_compile(
-    r'<[^/][^>]*?\sstyle="([^"]+)"')
+CRE_INLINE_STYLE: Final[Pattern] = re_compile(r'<[^/>][^>]*?\sstyle="(?P<attr>[^"]+)"')
 
 
-# TODO: 使用策略模式，而不是像现在这样一大块
-def analyze_one(bookpath, data, mime=None):
+MIME_REGISTRY = {}
+OP_REGISTRY = {}
+
+
+def mimes_register(*media_types):
+    def register(fn):
+        for mime in media_types:
+            MIME_REGISTRY[mime] = fn
+        return fn
+    return register
+
+
+def op_register(*op_types):
+    def register(fn):
+        for op in op_types:
+            OP_REGISTRY[op] = fn
+        return fn
+    return register
+
+
+def analyze(bookpath, text, mime=None):
     """"""
-    def gen_filtered_links(links):
-        for link in links:
-            link = unquote(link.partition('#')[0])
-            if link in ('', '.') or CRE_PROT.match(link) is not None:
-                continue
-            ref_path = reference_path(bookpath, link, "/")
-            yield ref_path
     if mime is None:
         mime = guess_mimetype(bookpath)
-    if mime in MIMES_OF_STYLES:
-        return Counter(gen_filtered_links(
-            next(filter(None, m.groups())) 
-            for m in CRE_URL.finditer(data)))
-    elif mime in MIMES_OF_TEXT:
-        return {
-            'ref': Counter(gen_filtered_links(
-                m['link'] 
-                for m in CRE_REF.finditer(data))), 
-            'inline': Counter(gen_filtered_links(
-                next(filter(None, m.groups()))
-                for m0 in CRE_INLINE_STYLE.finditer(data)
-                for m in CRE_URL.finditer(m0[0]))), 
-            'style': Counter(gen_filtered_links(
-                next(filter(None, m.groups()))
-                for m0 in CRE_EL_STYLE.finditer(data)
-                for m in CRE_URL.finditer(m0[0]))), 
-        }
+    handler = MIME_REGISTRY[mime]
+    return handler(bookpath, text)
 
 
-def analyze(opfwrapper):
+def fileter_localpath(bookpath, hrefs):
     """"""
-    map_path_refset = {}
-    map_ref_pathset = defaultdict(set)
-
-    for fid, href, mime, *_ in opfwrapper.manifest_iter():
-        if mime not in MIMES_OF_TEXT and mime not in MIMES_OF_STYLES:
+    for href in hrefs:
+        phref = urlparse(href)
+        if phref.scheme or phref.path in ("", "."):
             continue
-        bookpath = opfwrapper.id_to_bookpath(fid)
+        yield reference_path(bookpath, phref.path, "/")
 
-        realpath = syspath.join(opfwrapper.ebook_root, path_posix_to_sys(bookpath))
-        content = open(realpath, encoding="utf-8").read()
-        result = analyze_one(bookpath, content, mime)
-        map_path_refset[bookpath] = result
-        if mime in MIMES_OF_STYLES:
-            for ref_bookpath in result:
-                map_ref_pathset[ref_bookpath].add(bookpath)
-        elif mime in MIMES_OF_TEXT:
-            for refset in result.values():
-                for ref_bookpath in refset:
-                    map_ref_pathset[ref_bookpath].add(bookpath)
-    return map_path_refset, map_ref_pathset
+
+@mimes_register("text/css")
+def analyze_css(bookpath, text):
+    """"""
+    return {
+        "css": Counter(fileter_localpath(
+            bookpath, (
+                unquote(m[m.lastgroup])
+                for m in CRE_URL.finditer(text)
+            )
+        )), 
+    }
+
+
+@mimes_register("text/html", "application/xhtml+xml")
+def analyze_html(bookpath, text):
+    """"""
+    return {
+        "attr_href_src": Counter(fileter_localpath(
+            bookpath, (
+                unquote(m["link"])
+                for m in CRE_REF.finditer(text)
+            )
+        )), 
+        "attr_style": Counter(fileter_localpath(
+            bookpath, (
+                unquote(m[m.lastgroup])
+                for m0 in CRE_INLINE_STYLE.finditer(text)
+                for m in CRE_URL.finditer(unquote(m0["attr"]))
+            )
+        )), 
+        "el_style": Counter(fileter_localpath(
+            bookpath, (
+                unquote(m[m.lastgroup])
+                for m0 in CRE_EL_STYLE.finditer(text)
+                for m in CRE_URL.finditer(unescape(m0["text"]))
+            )
+        )), 
+    }
+
+
+@mimes_register("application/x-dtbncx+xml")
+def analyze_ncx(bookpath, text):
+    """"""
+    return {
+        "attr_href_src": Counter(fileter_localpath(
+            bookpath, (
+                unquote(m["link"])
+                for m in CRE_REF.finditer(text)
+            )
+        )), 
+    }
+
+
+@op_register("css")
+def update_css(text, src_bookpath, dest_bookpath, refby_bookpath):
+    def repl(m):
+        href = unquote(m[m.lastgroup])
+        phref = urlparse(href)
+        if phref.scheme or phref.path in ("", "."):
+            return m[0]
+        if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
+            return 'url("%s")' % quote(
+                urlunparse(phref._replace(path=relpath)))
+        else:
+            return m[0]
+
+    relpath = posixpath.relpath(dest_bookpath, posixpath.dirname(refby_bookpath))
+    return CRE_URL.sub(repl, text)
+
+
+@op_register("attr_href_src")
+def update_attr_href_src(text, src_bookpath, dest_bookpath, refby_bookpath):
+    def repl(m):
+        text = m[0]
+        href = unquote(m["link"])
+        phref = urlparse(href)
+        if phref.scheme or phref.path in ("", "."):
+            return text
+        if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
+            start = m.start()
+            begin = m.start("link")
+            return text[start:begin] + quote(urlunparse(phref._replace(path=relpath)))
+        else:
+            return text
+
+    relpath = posixpath.relpath(dest_bookpath, posixpath.dirname(refby_bookpath))
+    return CRE_REF.sub(repl, text)
+
+
+@op_register("attr_style")
+def update_attr_style(text, src_bookpath, dest_bookpath, refby_bookpath):
+    def repl(m):
+        text = m[0]
+        text_attr = m["attr"]
+        text_attr_new = CRE_URL.sub(sub_repl, text_attr)
+        if text_attr == text_attr_new:
+            return text
+        else:
+            start, stop = m.span()
+            begin, end = m.span("attr")
+            return text[start:begin] + text_attr_new + text[end:stop]
+
+    def sub_repl(m):
+        href = unquote(m[m.lastgroup])
+        phref = urlparse(href)
+        if phref.scheme or phref.path in ("", "."):
+            return m[0]
+        if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
+            return 'url("%s")' % quote(
+                urlunparse(phref._replace(path=relpath)))
+        else:
+            return m[0]
+
+    relpath = posixpath.relpath(dest_bookpath, posixpath.dirname(refby_bookpath))
+    return CRE_INLINE_STYLE.sub(repl, text)
+
+
+@op_register("el_style")
+def update_el_style(text, src_bookpath, dest_bookpath, refby_bookpath):
+    def repl(m):
+        text = m[0]
+        text_attr = m["attr"]
+        text_attr_new = CRE_URL.sub(sub_repl, text_attr)
+        if text_attr == text_attr_new:
+            return text
+        else:
+            start, stop = m.span()
+            begin, end = m.span("attr")
+            return text[start:begin] + text_attr_new + text[end:stop]
+
+    def sub_repl(m):
+        href = unquote(m[m.lastgroup])
+        phref = urlparse(href)
+        if phref.scheme or phref.path in ("", "."):
+            return m[0]
+        if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
+            return 'url("%s")' % quote(
+                urlunparse(phref._replace(path=relpath)))
+        else:
+            return m[0]
+
+    relpath = posixpath.relpath(dest_bookpath, posixpath.dirname(refby_bookpath))
+    return CRE_EL_STYLE.sub(repl, text)
 
 
 class EpubFileEventHandler(FileSystemEventHandler):
-
+    """"""
     def __init__(
         self, 
         opfwrapper: OpfWrapper, /, 
-        logger: logging.Logger = logging.getLogger("root"), 
+        logger: logging.Logger = logging.getLogger(), 
         ignore: Optional[Callable[[str], bool]] = None, 
     ):
         super().__init__()
@@ -142,8 +259,10 @@ class EpubFileEventHandler(FileSystemEventHandler):
             for bookpath in opfwrapper.bookpath_to_id
         }
 
-        # TODO: 可以优化
-        self._map_path_refset, self._map_ref_pathset = analyze(opfwrapper)
+        self._ref_to_refby = {}
+        self._refby_to_ref = defaultdict(set)
+        for bookpath in opfwrapper.bookpath_to_id:
+            self._add_ref(bookpath)
 
     @property
     def opfwrapper(self) -> OpfWrapper:
@@ -158,197 +277,117 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
     def is_reffile(self, bookpath):
         media_type = self.get_media_type(bookpath)
-        return media_type in MIMES_OF_TEXT or media_type in MIMES_OF_STYLES 
+        return media_type in MIME_REGISTRY
 
-    def _add_bookpath_ref(self, bookpath, mime=None):
+    def _add_ref(self, bookpath, mime=None):
         if mime is None:
             mime = self.get_media_type(bookpath)
-        if mime in MIMES_OF_STYLES or mime in MIMES_OF_TEXT:
-            try:
-                realpath = self.get_path(bookpath)
-                # TODO: 在 Windows 下，新增文件过快时，文件还没复制好，就已经去读了，就会报错 PermissionError
-                content = open(realpath, encoding="utf-8").read()
-            except FileNotFoundError:
-                # TODO: The file may be deleted or moved, a callback should be registered here, 
-                #       then called when the modified event is triggered
-                return
-            result = analyze_one(bookpath, content)
-            if not result:
-                return
-            self._map_path_refset[bookpath] = result
-            if mime in MIMES_OF_STYLES:
-                for ref_bookpath in result:
-                    self._map_ref_pathset[ref_bookpath].add(bookpath)
-            elif mime in MIMES_OF_TEXT:
-                for refset in result.values():
-                    for ref_bookpath in refset:
-                        self._map_ref_pathset[ref_bookpath].add(bookpath)
+        if mime not in MIME_REGISTRY:
+            return
+        path = self._opfwrapper.bookpath_to_path(bookpath)
+        try:
+            text = open(path, encoding="utf-8").read()
+        except (FileNotFoundError, PermissionError):
+            # TODO: 在 Windows 下，新增文件过快时，文件还没复制好，就已经去读了，就会报错 PermissionError
+            self.logger.error(
+                "The add_ref(bookpath=%r, mime=%r) was skipped, "
+                "because the file %r was deleted or moved" % (
+                    bookpath, mime, path
+                )
+            )
+            return
+        result = analyze(bookpath, text, mime)
+        self._ref_to_refby[bookpath] = result
+        refby_to_ref = self._refby_to_ref
+        for refset in result.values():
+            if not refset:
+                continue
+            for ref_bookpath in refset:
+                refby_to_ref[ref_bookpath].add(bookpath)
 
-    def _del_bookpath_ref(self, bookpath, mime=None):
+    def _delete_ref(self, bookpath, mime=None):
         if mime is None:
             mime = self.get_media_type(bookpath)
-        if mime in MIMES_OF_STYLES:
-            refset = self._map_path_refset.pop(bookpath, None)
-            if refset:
+        if mime not in MIME_REGISTRY:
+            return
+        result = self._ref_to_refby.pop(bookpath, None)
+        if result:
+            refby_to_ref = self._refby_to_ref
+            for refset in result.values():
+                for ref_bookpath in refset:
+                    refby_to_ref[ref_bookpath].discard(bookpath)
+
+    def _transfer_ref(self, src_bookpath, dest_bookpath):
+        ref_to_refby, refby_to_ref = self._ref_to_refby, self._refby_to_ref
+
+        d_refby = ref_to_refby.get(src_bookpath)
+        if d_refby:
+            for refset in d_refby.values():
                 for ref in refset:
-                    self._map_ref_pathset[ref].discard(bookpath)
-        elif mime in MIMES_OF_TEXT:
-            result = self._map_path_refset.pop(bookpath, None)
-            if result:
-                for refset in result.values():
-                    for ref_bookpath in refset:
-                        self._map_ref_pathset[ref_bookpath].discard(bookpath)
+                    refby_to_ref[ref].discard(src_bookpath)
+                    refby_to_ref[ref].add(dest_bookpath)
 
-    def _update_refby_files(self, bookpath, dest_bookpath, ls_refby):
-        if not ls_refby:
+        refset = refby_to_ref.get(src_bookpath)
+        if refset is not None:
+            for ref in refset:
+                for d in ref_to_refby[ref].values():
+                    if src_bookpath in d:
+                        d[dest_bookpath] = d.pop(src_bookpath)
+
+        ref_to_refby[dest_bookpath] = ref_to_refby.pop(src_bookpath)
+        refby_to_ref[dest_bookpath] = refby_to_ref.pop(src_bookpath)
+
+    def _get_refby(self, bookpath):
+        refby = {}
+        refset = self._refby_to_ref.get(bookpath)
+        if refset:
+            ref_to_refby = self._ref_to_refby
+            for ref in refset:
+                result = ref_to_refby[ref]
+                refby[ref] = [
+                    (key, val[bookpath]) 
+                    for key, val in result.items() if bookpath in val
+                ]
+        return refby
+
+    def _update_refby(self, src_bookpath, dest_bookpath, refby):
+        if not refby:
             return
 
-        def rel_ref(src, ref):
-            # NOTE: ca means common ancestors
-            ca = posixpath.commonprefix((src, ref)).count('/')
-            return '../' * (src.count('/') - ca) + '/'.join(ref.split('/')[ca:])
+        to_path = self._opfwrapper.bookpath_to_path
 
-        def url_repl(m, refby):
+        for refby_bookpath, typelist in refby.items():
+            if refby_bookpath == src_bookpath:
+                refby_bookpath = dest_bookpath
+
+            refby_path = to_path(refby_bookpath)
+
             try:
-                link = next(filter(None, m.groups()))
-            except StopIteration:
-                return m[0]
-
-            urlparts = urlparse(link)
-            link = unquote(urlparts.path)
-            if link in ('', '.') or CRE_PROT.match(link) is not None:
-                return m[0]
-
-            if reference_path(refby, link, "/") == bookpath:
-                return 'url("%s")' % urlunparse(urlparts._replace(
-                    path=quote(rel_ref(refby, dest_bookpath))
-                ))
-            else:
-                return m[0]
-
-        def ref_repl(m, refby):
-            link = m['link']
-            urlparts = urlparse(link)
-            link = unquote(urlparts.path)
-            if link in ('', '.') or CRE_PROT.match(link) is not None:
-                return m[0]
-            if reference_path(refby, link, "/") == bookpath:
-                return m[1] + urlunparse(urlparts._replace(
-                    path=quote(rel_ref(refby, dest_bookpath))
-                ))
-            else:
-                return m[0]
-
-        def sub_url_in_hxml(text, refby, cre=CRE_EL_STYLE):
-            ls_repl_part = []
-            for match in cre.finditer(text):
-                repl_part, n = CRE_URL.subn(partial(url_repl, refby=refby), match[0])
-                if n > 0:
-                    ls_repl_part.append((match.span(), repl_part))
-            if ls_repl_part:
-                text_parts = []
-                last_stop = 0
-                for (start, stop), repl_part in ls_repl_part:
-                    text_parts.append(text[last_stop:start])
-                    text_parts.append(repl_part)
-                    last_stop = stop
-                else:
-                    text_parts.append(text[last_stop:])
-                return ''.join(text_parts)
-            return text
-
-        for refby in ls_refby:
-            if type(refby) is str:
-                if refby == bookpath:
-                    refby = dest_bookpath
-                refby_srcpath = self.get_path(refby)
-                try:
-                    if stat(refby_srcpath).st_mtime_ns != self._bookpath_to_mtime[refby_srcpath]:
-                        self.logger.error(
-                            'Automatic update reference %r -> %r was skipped, '
-                            'because the file %r has been modified', 
-                            bookpath, dest_bookpath, refby_srcpath
+                # TODO: 如果 mtime 变了，则需要先 analyse，如果还引用 src_bookpath，则尝试更新
+                if stat(refby_path).st_mtime_ns != self._bookpath_to_mtime[refby_bookpath]:
+                    self.logger.error(
+                        "Automatic update reference %r -> %r was skipped, "
+                        "because the file %r was deleted or moved" % (
+                            src_bookpath, dest_bookpath, refby_path
                         )
-                        continue
-                    content = open(refby_srcpath).read()
-                except FileNotFoundError:
-                    # NOTE: The file may have been moved or deleted
-                    def callback(refby, refby_srcpath, types=None):
-                        try:
-                            if stat(refby_srcpath).st_mtime_ns != self._bookpath_to_mtime[refby_srcpath]:
-                                self.logger.error(
-                                    'Automatic update reference %r -> %r was skipped, '
-                                    'because the file %r has been modified', 
-                                    bookpath, dest_bookpath, refby_srcpath
-                                )
-                                return
-                            content = open(refby_srcpath).read()
-                        except FileNotFoundError:
-                            self.logger.error(
-                                'Automatic update reference %r -> %r was skipped, '
-                                'because the file %r disappeared', 
-                                bookpath, dest_bookpath, refby_srcpath
-                            )
-                            return
-                        content = CRE_URL.sub(partial(url_repl, refby=refby), content)
-                        open(refby_srcpath, 'w').write(content)
-                        self.on_modified(FileModifiedEvent(refby_srcpath))
-
+                    )
                     continue
-                content = CRE_URL.sub(partial(url_repl, refby=refby), content)
+                text = open(refby_path, encoding="utf-8").read()
+            except FileNotFoundError:
+                self.logger.error(
+                    "Automatic update reference %r -> %r was skipped, "
+                    "because the file %r have been deleted or moved" % (
+                        src_bookpath, dest_bookpath, refby_path
+                    )
+                )
             else:
-                refby, types = refby
-                if refby == bookpath:
-                    refby = dest_bookpath
-                refby_srcpath = self._watchdir + path_posix_to_sys(refby)
-                try:
-                    if stat(refby_srcpath).st_mtime_ns != self._bookpath_to_mtime[refby_srcpath]:
-                        self.logger.error(
-                            'Automatic update reference %r -> %r was skipped, '
-                            'because the file %r has been modified', 
-                            bookpath, dest_bookpath, refby_srcpath
-                        )
-                        continue
-                    content = open(refby_srcpath).read()
-                except FileNotFoundError:
-                    # NOTE: The file may have been moved or deleted
-                    def callback(refby, refby_srcpath, types=types):
-                        try:
-                            if stat(refby_srcpath).st_mtime_ns != self._bookpath_to_mtime[refby_srcpath]:
-                                self.logger.error(
-                                    'Automatic update reference %r -> %r was skipped, '
-                                    'because the file %r has been modified', 
-                                    bookpath, dest_bookpath, refby_srcpath
-                                )
-                                return
-                            content = open(refby_srcpath).read()
-                        except FileNotFoundError:
-                            self.logger.error(
-                                'Automatic update reference %r -> %r was skipped, '
-                                'because the file %r disappeared', 
-                                bookpath, dest_bookpath, refby_srcpath
-                            )
-                            return
-                        for tp in types:
-                            if tp == 'ref':
-                                content = CRE_REF.sub(partial(ref_repl, refby=refby), content)
-                            elif tp == 'inline':
-                                content = sub_url_in_hxml(content, refby, CRE_INLINE_STYLE)
-                            elif tp == 'style':
-                                content = sub_url_in_hxml(content, refby, CRE_EL_STYLE)
-                        open(refby_srcpath, 'w').write(content)
-                        self.on_modified(FileModifiedEvent(refby_srcpath))
-
-                    continue
-                for tp in types:
-                    if tp == 'ref':
-                        content = CRE_REF.sub(partial(ref_repl, refby=refby), content)
-                    elif tp == 'inline':
-                        content = sub_url_in_hxml(content, refby, CRE_INLINE_STYLE)
-                    elif tp == 'style':
-                        content = sub_url_in_hxml(content, refby, CRE_EL_STYLE)
-            open(refby_srcpath, 'w').write(content)
-            self.on_modified(FileModifiedEvent(refby_srcpath))
+                text_new = text
+                for type_, count in typelist:
+                    text_new = OP_REGISTRY[type_](
+                        text_new, src_bookpath, dest_bookpath, refby_bookpath)
+                if text != text_new:
+                    open(refby_path, "w", encoding="utf-8").write(text_new)
+                    self.on_modified(FileModifiedEvent(refby_path))
 
     def on_created(self, event):
         if event.is_directory:
@@ -361,7 +400,17 @@ class EpubFileEventHandler(FileSystemEventHandler):
         bookpath = opfwrapper.path_to_bookpath(path)
 
         if bookpath in opfwrapper.bookpath_to_id:
-            self.on_deleted(FileDeletedEvent(path))
+            try:
+                mtime = stat(path).st_mtime_ns
+            except FileNotFoundError:
+                self.logger.error(
+                    "Ignored created event, maybe it was deleted or moved: %r" % path)
+                self.on_deleted(FileDeletedEvent(path))
+                return
+            else:
+                if mtime == self._bookpath_to_mtime[bookpath]:
+                    return
+                self.on_deleted(FileDeletedEvent(path))
 
         if self.ignore(bookpath):
             self.logger.debug(
@@ -371,16 +420,15 @@ class EpubFileEventHandler(FileSystemEventHandler):
         try:
             self._bookpath_to_mtime[bookpath] = stat(path).st_mtime_ns
         except FileNotFoundError:
-            self.logger.debug(
+            self.logger.error(
                 "Ignored created event, maybe it was deleted or moved: %r" % path)
             return
 
-        media_type = guess_mimetype(bookpath) or "application/octet-stream"
-        if media_type in MIMES_OF_TEXT or media_type in MIMES_OF_STYLES:
+        if self.is_reffile(bookpath):
             try:
-                self._add_bookpath_ref(bookpath, media_type)
+                self._add_ref(bookpath)
             except FileNotFoundError:
-                self.logger.debug(
+                self.logger.error(
                     "Ignored created event, maybe it was deleted or "
                     "moved during processing: %r" % path)
                 del self._bookpath_to_mtime[bookpath]
@@ -403,12 +451,12 @@ class EpubFileEventHandler(FileSystemEventHandler):
 
         def delete(bookpath):
             item = opfwrapper.delete(bookpath=bookpath)
-            self._del_bookpath_ref(bookpath, item.mimetype)
-            del self._bookpath_to_mtime[bookpath]
+            self._delete_ref(bookpath, item.media_type)
+            self._bookpath_to_mtime.pop(bookpath, None)
             logger.info("Deleted file: %r" % opfwrapper.bookpath_to_path(bookpath))
 
         if event.is_directory:
-            bookpath += '/'
+            bookpath = bookpath.rstrip("/") + "/"
             for subbookpath in tuple(opfwrapper.bookpath_to_id):
                 if subbookpath.startswith(bookpath):
                     delete(subbookpath)
@@ -443,22 +491,23 @@ class EpubFileEventHandler(FileSystemEventHandler):
         try:
             mtime = stat(path).st_mtime_ns
         except FileNotFoundError:
-            self.logger.debug(
+            self.logger.error(
                 "Ignored modified event, maybe it was deleted or moved: %r" % path)
         else:
-            if self._bookpath_to_mtime.get(src_path) == mtime:
+            if self._bookpath_to_mtime.get(bookpath) == mtime:
                 self.logger.debug(
                     "Ignored modified event, because its mtime is already latest: %r" % path)
                 return
 
-        self._del_bookpath_ref(bookpath)
-        self._add_bookpath_ref(bookpath)
+        self._delete_ref(bookpath)
+        self._add_ref(bookpath)
         self.logger.info("Modified file: %r" % path)
 
     def on_moved(self, event):
         if event.is_directory:
             self.logger.debug(
-                "Ignored moved event, because it is a directory: %r -> %r" % (event.src_path, event.dest_path))
+                "Ignored moved event, because it is a directory: %r -> %r" 
+                % (event.src_path, event.dest_path))
             return
 
         opfwrapper = self._opfwrapper
@@ -473,7 +522,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
         dest_is_ignored = self.ignore(dest_bookpath)
         if src_is_ignored:
             self.logger.debug(
-                    "Switch moved event to created event: %r -> %r" % (src_path, dest_path))
+                "Switch moved event to created event: %r -> %r" % (src_path, dest_path))
             self.on_created(FileCreatedEvent(dest_path))
             return
         elif dest_is_ignored:
@@ -481,101 +530,70 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 "Switch moved event to deleted event: %r -> %r" % (src_path, dest_path))
             self.on_deleted(FileDeletedEvent(src_path))
             return
-        # TODO: ????
+
+        src_ext = posixpath.splitext(src_bookpath)[1]
+        dest_ext = posixpath.splitext(dest_bookpath)[1]
+        src_media_type = self.get_media_type(src_bookpath)
+        dest_media_type = self.get_media_type(dest_bookpath)
+        if src_ext == dest_ext or src_media_type == dest_media_type:
+            id = opfwrapper.bookpath_to_id(src_bookpath)
+            src_href = opfwrapper.id_to_href(id)
+            dest_href = opfwrapper.bookpath_to_href(dest_bookpath)
+            del opfwrapper.bookpath_to_id[src_bookpath]
+            opfwrapper.bookpath_to_id[dest_bookpath] = id
+            del opfwrapper.href_to_id[src_href]
+            opfwrapper.href_to_id[dest_href] = id
+            opfwrapper.id_to_bookpath[id] = dest_bookpath
+            opfwrapper.manifest_map[id].set("href", dest_href)
+            dest_media_type = src_media_type
         else:
-            if posixpath.splitext(src_bookpath)[1] == posixpath.splitext(dest_bookpath)[1]:
-                id = opfwrapper.bookpath_to_id(src_bookpath)
-                src_href = opfwrapper.id_to_href(id)
-                dest_href = opfwrapper.bookpath_to_href(dest_bookpath)
-                del opfwrapper.bookpath_to_id[src_bookpath]
-                opfwrapper.bookpath_to_id[dest_bookpath] = id
-                del opfwrapper.href_to_id[src_href]
-                opfwrapper.href_to_id[dest_href] = id
-                opfwrapper.id_to_bookpath[id] = dest_bookpath
-                opfwrapper.id_to_href[id] = dest_href
-                opfwrapper.manifest_map[id].href = dest_href
-                # reftable.transfer(src_bookpath, dest_bookpat)
-            else:
-                opfwrapper.delete(bookpath=src_bookpath)
-                opfwrapper.add(bookpath=dest_bookpath)
+            opfwrapper.delete(bookpath=src_bookpath)
+            opfwrapper.add(bookpath=dest_bookpath, media_type=dest_media_type)
 
-            # TODO: 下面这一大段，过于混乱，需要重构
-            old_mtime = self._bookpath_to_mtime[src_bookpath]
-            self._bookpath_to_mtime[dest_bookpath] = old_mtime
-            # 各个文件引用多少其它文件及次数
-            map_path_refset = self._map_path_refset
-            # 各个文件被那些文件引用
-            map_ref_pathset = self._map_ref_pathset
-            # 我被哪些文件所引用
-            pathset = map_ref_pathset.get(src_bookpath)
-            # 我被哪些文件所引用，以及引用的方式
-            ls_refby = []
-            # map_ref_pathset[src_bookpath] -> map_ref_pathset[dest_bookpath]
-            if pathset is not None:
-                map_ref_pathset[dest_bookpath] = map_ref_pathset.pop(src_bookpath)
-                for p in pathset:
-                    result = map_path_refset[p]
-                    if type(result) is dict:
-                        ls_refby.append(
-                            (p, [key for key, val in result.items() if src_bookpath in val]))
-                    else:
-                        ls_refby.append(p)
-            # 我引用的文件
-            refs = map_path_refset[src_bookpath]
-            # src_bookpath in map_ref_pathset[*] -> dest_bookpath in map_ref_pathset[*]
-            if type(refs) is dict:
-                for refs2 in refs.values():
-                    for ref in refs2:
-                        map_ref_pathset[ref].discard(src_bookpath)
-                        map_ref_pathset[ref].add(dest_bookpath)
-            else:
-                for ref in refs:
-                    map_ref_pathset[ref].discard(src_bookpath)
-                    map_ref_pathset[ref].add(dest_bookpath)
+        self._transfer_ref(src_bookpath, dest_bookpath)
+        self._bookpath_to_mtime[dest_bookpath] = self._bookpath_to_mtime.pop(src_bookpath)
+        refby = self._get_refby(dest_bookpath)
+        if dest_media_type not in MIME_REGISTRY:
+            refby.pop(dest_bookpath, None)
 
-            result = map_path_refset.get(src_bookpath)
-            self._del_bookpath_ref(src_bookpath)
-            old_mime = self.get_media_type(src_bookpath)
-            mime = self.get_media_type(dest_bookpath)
-            if result is not None and old_mime == mime:
-                map_path_refset[dest_bookpath] = result
-                if mime in MIMES_OF_TEXT:
-                    for ref_bookpath in result:
-                        map_ref_pathset[ref_bookpath].add(dest_bookpath)
-                else:
-                    for refset in result.values():
-                        for ref_bookpath in refset:
-                            map_ref_pathset[ref_bookpath].add(dest_bookpath)
-            else:
-                self._add_bookpath_ref(dest_bookpath, mime)
-
-            self.logger.info(
-                    "Moved file: from %r to %r", src_path, dest_path)
-            self._update_refby_files(src_bookpath, dest_bookpath, ls_refby)
-
-
-from util.ignore import make_ignore
+        self.logger.info("Moved file: from %r to %r" % (src_path, dest_path))
+        self._update_refby(src_bookpath, dest_bookpath, refby)
 
 def watch(
     opfwrapper: OpfWrapper, /, 
-    logger: logging.Logger = logging.getLogger("root"), 
+    logger: logging.Logger = logging.getLogger(), 
     ignore: Optional[Callable[[str], bool]] = None, 
 ):
-    "Monitor all events of an epub editing directory, and maintain opf continuously."
+    """Monitor all events of an epub editing directory, and maintain opf continuously."""
+    watchdir = opfwrapper.ebook_root
     observer = Observer()
-    event_handler = EpubFileEventHandler(
-        opfwrapper, logger=logger, ignore=ignore)
-    observer.schedule(event_handler, opfwrapper.ebook_root, recursive=True)
+    event_handler = EpubFileEventHandler(opfwrapper, logger=logger, ignore=ignore)
+    observer.schedule(event_handler, watchdir, recursive=True)
     logger.info("Watching directory: %r" % watchdir)
     observer.start()
     try:
         while True:
             sleep(0.1)
     except KeyboardInterrupt:
-        logger.info('Shutting down watching ...')
+        logger.info("Shutting down watching ...")
     finally:
         observer.stop()
         observer.join()
     opfwrapper.dump()
-    logger.info('Done!')
+    logger.info("Done!")
+
+
+# def read(self, bookpath):
+#     # 还要判断 md5 是否改变
+#     # 只对 reffile 检查 mtime，md5
+#     mtime = self._bookpath_to_mtime[bookpath]
+#     path = self._opfwrapper.bookpath_to_path(bookpath)
+#     while True:
+#         data = open(path, "rb").read()
+#         mtime_cur = stat(path).st_mtime
+#         if mtime == mtime_cur:
+#             break
+#         mtime = mtime_cur
+
+
 

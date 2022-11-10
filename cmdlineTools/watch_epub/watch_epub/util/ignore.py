@@ -5,12 +5,15 @@
 """
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 1)
+__version__ = (0, 1, 2)
 __all__ = ["escape", "translate", "make_ignore", "ignore", "read_file"]
 
 from os import PathLike
-from re import compile as re_compile, escape as re_escape, Match, Pattern
-from typing import AnyStr, Callable, Final, Iterable
+from re import (
+    compile as re_compile, escape as re_escape, IGNORECASE, 
+    Match, Pattern, RegexFlag, 
+)
+from typing import AnyStr, Callable, Final, Iterable, Optional
 
 
 cre_stars: Final[Pattern[str]] = re_compile("\*{2,}")
@@ -140,6 +143,7 @@ def translate(pat: AnyStr) -> AnyStr:
 def make_ignore(
     pat: AnyStr, 
     *pats: AnyStr, 
+    flags: Optional[RegexFlag] = IGNORECASE, 
 ) -> Callable[[AnyStr], bool]:
     ""
     not_: AnyStr
@@ -149,10 +153,10 @@ def make_ignore(
         not_ = b"!"
     def get_ignore(pat: AnyStr) -> Callable[[AnyStr], bool]:
         if pat.startswith(not_):
-            match = re_compile(translate(pat[1:])).fullmatch
+            match = re_compile(translate(pat[1:]), flags=flags).fullmatch
             return lambda path: match(path) is None
         else:
-            match = re_compile(translate(pat)).fullmatch
+            match = re_compile(translate(pat), flags=flags).fullmatch
             return lambda path: match(path) is not None
     ignore = get_ignore(pat)
     if not pats:
@@ -164,6 +168,7 @@ def make_ignore(
 def ignore(
     pats: AnyStr | Iterable[AnyStr] | Callable[[AnyStr], bool], 
     path: AnyStr, 
+    flags: Optional[RegexFlag] = IGNORECASE, 
 ) -> bool:
     """
 
@@ -258,9 +263,9 @@ def ignore(
     if callable(pats):
         fn = pats
     elif isinstance(pats, (str, bytes)):
-        fn = make_ignore(pats)
+        fn = make_ignore(pats, flags=flags)
     else:
-        fn = make_ignore(*pats)
+        fn = make_ignore(*pats, flags=flags)
     return fn(path)
 
 

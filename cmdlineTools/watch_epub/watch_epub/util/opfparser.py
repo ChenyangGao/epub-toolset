@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 1)
+__version__ = (0, 1, 2)
 __all__ = ["get_opf_bookpath", "OpfParser"]
 
 # Reference:
@@ -59,10 +59,12 @@ class OpfParser:
         self.collections: list[_Element]
         self.load()
 
-    # now parse the OPF to extract manifest, spine , and metadata
     def load(self):
+        self.loads(open(self.opf_path, "rb").read())
+
+    def loads(self, text: Union[bytes, str]):
         # See: https://www.w3.org/publishing/epub32/epub-packages.html#sec-package-elem
-        root = xml_fromstring(open(self.opf_path, "rb").read())
+        root = xml_fromstring(text)
         if root.xpath("name()") != "package":
             raise ValueError("The root element is not <package>")
         self.opf = root.getroottree()
@@ -112,8 +114,10 @@ class OpfParser:
                 self.collections.append(el)
 
     def dump(self):
-        content = xml_tostring(self.opf, pretty_print=True)
-        open(self.opf_path, "wb").write(content)
+        open(self.opf_path, "wb").write(self.dumps())
+
+    def dumps(self) -> bytes:
+        return xml_tostring(self.opf, pretty_print=True)
 
     def __enter__(self):
         return self
