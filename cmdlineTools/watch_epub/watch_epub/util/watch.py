@@ -2,7 +2,7 @@
 # coding: utf-8
 
 __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 1, 2)
+__version__ = (0, 1, 3)
 __all__ = ["watch"]
 
 # TODO: 移动文件到其他文件夹，那么这个文件所引用的那些文件，相对位置也会改变
@@ -270,16 +270,6 @@ class EpubFileEventHandler(FileSystemEventHandler):
                     return ignore(bookpath)
             self.ignore = ignore_fn
 
-        self._bookpath_to_stat: dict[str, int] = {
-            bookpath: stat(opfwrapper.bookpath_to_path(bookpath))
-            for bookpath in opfwrapper.bookpath_to_id
-        }
-
-        self._ref_to_refby = {}
-        self._refby_to_ref = defaultdict(set)
-        for bookpath in opfwrapper.bookpath_to_id:
-            self._add_ref(bookpath)
-
     @property
     def opfwrapper(self) -> OpfWrapper:
         return self._opfwrapper
@@ -290,6 +280,115 @@ class EpubFileEventHandler(FileSystemEventHandler):
             return self._opfwrapper.id_to_media_type(id)
         except KeyError:
             return guess_mimetype(bookpath) or "application/octet-stream"
+
+    def on_created(self, event):
+        if event.is_directory:
+            self.logger.debug(
+                "Ignored created event, because it is a directory: %r" % event.src_path)
+            return
+
+        opfwrapper = self._opfwrapper
+        path = realpath(event.src_path)
+        bookpath = opfwrapper.path_to_bookpath(path)
+
+        if bookpath in opfwrapper.bookpath_to_id:
+            return
+
+        if self.ignore(bookpath):
+            self.logger.debug(
+                "Ignored created event, because it is specified to be ignored: %r" % path)
+            return
+
+        opfwrapper.add(bookpath=bookpath)
+        self.logger.info("Created file: %r" % path)
+
+    def on_deleted(self, event):
+        opfwrapper = self._opfwrapper
+        path = realpath(event.src_path)
+        bookpath = opfwrapper.path_to_bookpath(path)
+        logger = self.logger
+
+        def delete(bookpath):
+            item = opfwrapper.delete(bookpath=bookpath)
+            logger.info("Deleted file: %r" % opfwrapper.bookpath_to_path(bookpath))
+
+        if event.is_directory:
+            bookpath = bookpath.rstrip("/") + "/"
+            for subbookpath in tuple(opfwrapper.bookpath_to_id):
+                if subbookpath.startswith(bookpath):
+                    delete(subbookpath)
+        elif bookpath in opfwrapper.bookpath_to_id:
+            delete(bookpath)
+
+    def on_moved(self, event):
+        if event.is_directory:
+            self.logger.debug(
+                "Ignored moved event, because it is a directory: %r -> %r" 
+                % (event.src_path, event.dest_path))
+            return
+
+        opfwrapper = self._opfwrapper
+        src_path, dest_path = realpath(event.src_path), realpath(event.dest_path)
+        src_bookpath = opfwrapper.path_to_bookpath(src_path)
+        dest_bookpath = opfwrapper.path_to_bookpath(dest_path)
+
+        if dest_bookpath in opfwrapper.bookpath_to_id:
+            self.on_deleted(FileDeletedEvent(dest_path))
+
+        src_is_ignored = self.ignore(src_bookpath) 
+        dest_is_ignored = self.ignore(dest_bookpath)
+        if src_is_ignored:
+            self.logger.debug(
+                "Switch moved event to created event: %r -> %r" % (src_path, dest_path))
+            self.on_created(FileCreatedEvent(dest_path))
+            return
+        elif dest_is_ignored:
+            self.logger.debug(
+                "Switch moved event to deleted event: %r -> %r" % (src_path, dest_path))
+            self.on_deleted(FileDeletedEvent(src_path))
+            return
+
+        src_ext = posixpath.splitext(src_bookpath)[1]
+        dest_ext = posixpath.splitext(dest_bookpath)[1]
+        src_media_type = self.get_media_type(src_bookpath)
+        dest_media_type = self.get_media_type(dest_bookpath)
+        if src_ext == dest_ext or src_media_type == dest_media_type:
+            id = opfwrapper.bookpath_to_id(src_bookpath)
+            src_href = opfwrapper.id_to_href(id)
+            dest_href = opfwrapper.bookpath_to_href(dest_bookpath)
+            del opfwrapper.bookpath_to_id[src_bookpath]
+            opfwrapper.bookpath_to_id[dest_bookpath] = id
+            del opfwrapper.href_to_id[src_href]
+            opfwrapper.href_to_id[dest_href] = id
+            opfwrapper.id_to_bookpath[id] = dest_bookpath
+            opfwrapper.id_to_href(id, dest_href)
+            dest_media_type = src_media_type
+        else:
+            opfwrapper.delete(bookpath=src_bookpath)
+            opfwrapper.add(bookpath=dest_bookpath, media_type=dest_media_type)
+
+        self.logger.info("Moved file: from %r to %r" % (src_path, dest_path))
+
+
+class TrackingEpubFileEventHandler(EpubFileEventHandler):
+    """"""
+    def __init__(
+        self, 
+        opfwrapper: OpfWrapper, /, 
+        logger: logging.Logger = logging.getLogger(), 
+        ignore: Optional[Callable[[str], bool]] = None, 
+    ):
+        super().__init__(opfwrapper, logger, ignore)
+
+        self._bookpath_to_stat: dict[str, int] = {
+            bookpath: stat(opfwrapper.bookpath_to_path(bookpath))
+            for bookpath in opfwrapper.bookpath_to_id
+        }
+
+        self._ref_to_refby = {}
+        self._refby_to_ref = defaultdict(set)
+        for bookpath in opfwrapper.bookpath_to_id:
+            self._add_ref(bookpath)
 
     def is_reffile(self, bookpath):
         media_type = self.get_media_type(bookpath)
@@ -596,12 +695,14 @@ class EpubFileEventHandler(FileSystemEventHandler):
 def watch(
     opfwrapper: OpfWrapper, /, 
     logger: logging.Logger = logging.getLogger(), 
-    ignore: Optional[Callable[[str], bool]] = None, 
+    ignore: Optional[Callable[[str], bool]] = None,
+    update_reference: bool = True, 
 ):
     """Monitor all events of an epub editing directory, and maintain opf continuously."""
     watchdir = opfwrapper.ebook_root
     observer = Observer()
-    event_handler = EpubFileEventHandler(opfwrapper, logger=logger, ignore=ignore)
+    handler_class = TrackingEpubFileEventHandler if update_reference else EpubFileEventHandler
+    event_handler = handler_class(opfwrapper, logger=logger, ignore=ignore)
     observer.schedule(event_handler, watchdir, recursive=True)
     logger.info("Watching directory: %r" % watchdir)
     observer.start()

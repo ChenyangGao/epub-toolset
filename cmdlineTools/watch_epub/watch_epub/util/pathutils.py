@@ -33,10 +33,10 @@ from typing import cast, AnyStr, Final, Optional, Union
 
 cre_nt_seps: Final[Pattern[str]] = re_compile(r"[\\/]")
 creb_nt_seps: Final[Pattern[bytes]] = re_compile(br"[\\/]")
-cre_nt_name_na_chars: Final[Pattern[str]] = re_compile(r'\\:*?"<>|')
-creb_nt_name_na_chars: Final[Pattern[bytes]] = re_compile(br'\\:*?"<>|')
-cre_nt_name_na_chars_all: Final[Pattern[str]] = re_compile(r'/\\:*?"<>|')
-creb_nt_name_na_chars_all: Final[Pattern[bytes]] = re_compile(br'/\\:*?"<>|')
+cre_nt_name_na_chars: Final[Pattern[str]] = re_compile(r'[\\:*?"<>|]')
+creb_nt_name_na_chars: Final[Pattern[bytes]] = re_compile(br'[\\:*?"<>|]')
+cre_nt_name_na_chars_all: Final[Pattern[str]] = re_compile(r'[/\\:*?"<>|]')
+creb_nt_name_na_chars_all: Final[Pattern[bytes]] = re_compile(br'[/\\:*?"<>|]')
 cre_nt_drive: Final[Pattern[str]] = re_compile(r'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
 creb_nt_drive: Final[Pattern[bytes]] = re_compile(br'^///(?P<drive>[^/\\:*?"<>|]+)[:|]')
 
@@ -463,7 +463,7 @@ def path_posix_to_nt(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
         else:
             drive = ""
         if cre_nt_name_na_chars.search(path_):
-            raise ValueError("Unable convert path to nt: %r" % path)
+            raise ValueError("Unable to convert path to nt: %r" % path)
         return drive + path_.replace(posixsep, ntsep)
     else:
         match_drive = creb_nt_drive.match(path_)
@@ -473,7 +473,7 @@ def path_posix_to_nt(path: AnyStr | PathLike[AnyStr]) -> AnyStr:
         else:
             drive = b""
         if creb_nt_name_na_chars.search(path_):
-            raise ValueError("Unable convert path to nt: %r" % path)
+            raise ValueError("Unable to convert path to nt: %r" % path)
         return drive + path_.replace(posixsepb, ntsepb)
 
 

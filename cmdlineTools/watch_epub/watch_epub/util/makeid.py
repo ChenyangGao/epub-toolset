@@ -67,8 +67,8 @@ def makeid_timestamp_ns(href=None, bookpath=None):
     return str(time_ns())
 
 
-@register("ramdomhex64")
-def makeid_ramdomhex64(href=None, bookpath=None):
+@register("randomhex64")
+def makeid_randomhex64(href=None, bookpath=None):
     "64 位随机 hex 字符串（只包含 0-9a-z）"
     # 可用：os.urandom, random.randbytes, secrets.token_bytes
     return urandom(32).hex()

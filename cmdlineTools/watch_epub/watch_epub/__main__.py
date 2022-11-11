@@ -6,7 +6,7 @@ __version__ = (0, 1, 5)
 __all__ = []
 
 # Refer to the rules of [gitignore](https://git-scm.com/docs/gitignore)
-IGNORES = [".DS_Store", "._*", "Thumb.store", "desktop.ini", ".*.sw[px]"]
+IGNORES = [".DS_Store", "._*", "Thumb.store", "desktop.ini", ".*.sw[px]", ".*.swpx"]
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
@@ -29,16 +29,16 @@ if __name__ == "__main__":
     1. .css 引用其它 .css
     2. .html/.xhtml 引用其它文件（除了 .ncx）
     3. .ncx 引用其它 .html/.xhtml
-，当文件增加、删除、移动，以及 .css/.html/.xhtml/.ncx 文件改动后，引用关系就会被自动更新。
-更具体的，我会尝试从下列 media-type (mimetype) 的文件中提取引用关系：
+    4. 其它
+当未指定 -nu 或 --not-update-reference，意味着开启自动更新引用关系，则当文件增加、删除、移动，以及 .css/.html/.xhtml/.ncx 等文件改动后，相关的 .css/.html/.xhtml/.ncx 等文件内定义的引用关系就会被自动更新。
+目前，会尝试从下列 media-type (mimetype) 的文件中提取引用关系（我以后可以根据需要添加支持更多）：
 - text/html
 - application/xhtml+xml
-- application/x-dtbook+xml
 - application/x-dtbncx+xml
 - text/css
 
-启动程序后，不要关闭命令行窗口，否则程序会强制退出，变动也会丢失。
-当你想结束编辑时，在刚才打开的命令行窗口，输入 Ctrl+C ，程序会被正常终止，且生成一个改动后的 EPUB 文件。""")
+⚠️ 启动程序后，不要关闭命令行窗口，否则程序会强制退出，变动也会丢失。
+⏰ 当你想结束编辑时，在刚才打开的命令行窗口，输入 Ctrl+C ，程序会被正常终止，且生成一个改动后的 EPUB 文件。""")
     parser.add_argument("epub_path", nargs="?", 
         help="请指定一个要编辑的 EPUB 文件路径，如果文件路径不存在，则自动创建一个符合 EPUB 3 标准的新文件。")
     parser.add_argument("-i", "--inplace", action="store_true", 
@@ -47,12 +47,16 @@ if __name__ == "__main__":
         help="启用调试信息。如果指定此参数，会将日志级别设置为 DEBUG（否则，默认为 INFO）。")
     makeid_default = next(iter(TYPE_TO_MAKEID))
     parser.add_argument("-m", "--makeid", default=makeid_default, choices=TYPE_TO_MAKEID, 
-    help="新文件在 OPF 中的 id。可选以下值，默认为 %s：" % makeid_default + "".join(
-        "\n    %s: %s" % (typ, fn.__doc__) for typ, fn in TYPE_TO_MAKEID.items()))
+        help="新文件在 OPF 中的 id。可选以下值，默认为 %s：" % makeid_default + "".join(
+             "\n    %s: %s" % (typ, fn.__doc__) for typ, fn in TYPE_TO_MAKEID.items()))
+    parser.add_argument("-nu", "--not-update-reference", action="store_false", dest="update_reference", 
+        help="禁用自动更新引用关系，若未指定此参数（默认），则会开启自动更新。指定此参数后，就不会读取本地文件，也会忽略"
+             "文件更改（modified）事件，直接根据新增(created)、删除(deleted)和移动(moved)事件来更新 OPF。")
     # TODO: 接受一个文件或者标准输入
     parser.add_argument("-n", "--ignore-file", dest="ignore_file", 
         help="指定一个文件路径，采用类似[gitignore](https://git-scm.com/docs/gitignore)的语法规则，"
              "用于过滤文件，默认采用如下内容：\n" + "\n".join(IGNORES))
+
     args = parser.parse_args()
     if args.epub_path is None:
         parser.parse_args(["-h"])
@@ -74,8 +78,8 @@ def ensure_module(
     try:
         __import__(module)
     except ImportError:
-        choose = input("检测到缺少模块 %s，是否安装？ [y]/n" %s).strip()
-        if not choose or choose.lower() in ("y", "yes"):
+        choose = input("检测到缺少模块 %s，是否安装？ [Y]/n" % module).strip()
+        if choose.strip().lower() in ("", "y", "yes"):
             from util.piputils import install
 
             install(*installs, index_url=index_url)
@@ -186,6 +190,7 @@ def main(args):
     inplace: bool = args.inplace
     debug: bool = args.debug
     makeid: str = args.makeid
+    update_reference: bool = args.update_reference
     ignore_file: Optional[str] = args.ignore_file
 
     set_makeid(args.makeid)
@@ -220,7 +225,7 @@ def main(args):
         protected_pats = ("/META-INF/", "/mimetype", "/" + escape(opfwrapper.opf_bookpath))
         main_ignore = make_ignore(*protected_pats)
         ignore = make_ignore(*protected_pats, *ignores)
-        watch(opfwrapper, logger=logger, ignore=ignore)
+        watch(opfwrapper, logger=logger, ignore=ignore, update_reference=update_reference)
         chdir(oldwd)
 
 
