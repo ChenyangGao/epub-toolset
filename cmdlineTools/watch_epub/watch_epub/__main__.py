@@ -6,7 +6,7 @@ __version__ = (0, 1, 5)
 __all__ = []
 
 # Refer to the rules of [gitignore](https://git-scm.com/docs/gitignore)
-IGNORES = [".DS_Store", "._*", "Thumb.store", "desktop.ini"]
+IGNORES = [".DS_Store", "._*", "Thumb.store", "desktop.ini", ".*.sw[px]"]
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
@@ -57,8 +57,10 @@ if __name__ == "__main__":
     if args.epub_path is None:
         parser.parse_args(["-h"])
 
-if __import__("sys").version_info < (3, 10):
-    raise SystemExit("Python 版本不得低于 3.10，你的版本是\n%s" % sys.version)
+import sys
+
+if sys.version_info < (3, 10):
+    raise SystemExit("⚠️ Python 版本不得低于 3.10，你的版本是\n%s" % sys.version)
 
 from typing import Optional
 
@@ -100,7 +102,7 @@ from uuid import uuid4
 from warnings import warn
 from zipfile import ZipFile
 
-from util.ignore import make_ignore, read_file
+from util.ignore import escape, make_ignore, read_file
 from util.makeid import set_makeid
 from util.opfwrapper import OpfWrapper
 from util.pathutils import openpath
@@ -202,9 +204,6 @@ def main(args):
     else:
         ignores = read_file(ignore_file)
 
-    main_ignore = make_ignore("/META-INF/", "/mimetype")
-    ignore = make_ignore("/META-INF/", "/mimetype", *ignores)
-
     with ctx_epub_tempdir(
         epub_path, 
         inplace=inplace, 
@@ -218,6 +217,9 @@ def main(args):
             opf_dir = "."
         openpath(opf_dir)
         chdir(opf_dir)
+        protected_pats = ("/META-INF/", "/mimetype", "/" + escape(opfwrapper.opf_bookpath))
+        main_ignore = make_ignore(*protected_pats)
+        ignore = make_ignore(*protected_pats, *ignores)
         watch(opfwrapper, logger=logger, ignore=ignore)
         chdir(oldwd)
 

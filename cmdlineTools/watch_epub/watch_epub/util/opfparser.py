@@ -14,11 +14,13 @@ import posixpath
 
 from os import fsdecode, PathLike
 from typing import AnyStr, Optional, Union
+from urllib.parse import quote, unquote
 
 from lxml.etree import _Element, _ElementTree
 
-from util.lxmlparser import xml_fromstring, xml_tostring
 from util.pathutils import path_to_posix, path_posix_to_sys
+from util.lxmlparser import xml_fromstring, xml_tostring
+from util.undefined import undefined, UndefinedType
 
 
 def get_opf_bookpath(ebook_root: AnyStr | PathLike[AnyStr] = "") -> str:
@@ -156,24 +158,79 @@ class OpfParser:
         bookpath = self.path_to_bookpath(path)
         return self.bookpath_to_href(bookpath)
 
-    def id_to_href(self, id: str) -> str:
-        return self.manifest_map[id].attrib["href"]
+    def id_to_href(
+        self, 
+        id: str, 
+        value: Union[UndefinedType, str] = undefined, 
+    ) -> str:
+        if value is undefined:
+            return unquote(self.manifest_map[id].attrib["href"])
+        else:
+            self.manifest_map[id].attrib["href"] = quote(value, ":/#")
+            return value
 
-    def id_to_bookpath(self, id: str) -> str:
-        href = self.id_to_href(id)
-        return self.href_to_bookpath(href)
+    def id_to_bookpath(
+        self, 
+        id: str, 
+        value: Union[UndefinedType, str] = undefined, 
+    ) -> str:
+        if value is undefined:
+            href = self.id_to_href(id)
+            return self.href_to_bookpath(href)
+        else:
+            href = self.bookpath_to_href(bookpath)
+            self.id_to_href(id, href)
+            return value
 
-    def id_to_media_type(self, id: str) -> str:
-        return self.manifest_map[id].attrib["media-type"]
+    def id_to_media_type(
+        self, 
+        id: str, 
+        value: Union[UndefinedType, str] = undefined, 
+    ) -> str:
+        if value is undefined:
+            return self.manifest_map[id].attrib["media-type"]
+        else:
+            self.manifest_map[id].attrib["media-type"] = value
+            return value
 
-    def id_to_properties(self, id: str) -> Optional[str]:
-        return self.manifest_map[id].get("properties")
+    def id_to_properties(
+        self, 
+        id: str, 
+        value: Union[UndefinedType, None, str] = undefined, 
+    ) -> Optional[str]:
+        if value is undefined:
+            return self.manifest_map[id].get("properties")
+        elif value is None:
+            return self.manifest_map[id].attrib.pop("properties")
+        else:
+            self.manifest_map[id].attrib["properties"] = value
+            return value
 
-    def id_to_fallback(self, id: str) -> Optional[str]:
-        return self.manifest_map[id].get("fallback")
+    def id_to_fallback(
+        self, 
+        id: str, 
+        value: Union[UndefinedType, None, str] = undefined, 
+    ) -> Optional[str]:
+        if value is undefined:
+            return self.manifest_map[id].get("fallback")
+        elif value is None:
+            return self.manifest_map[id].attrib.pop("fallback")
+        else:
+            self.manifest_map[id].attrib["fallback"] = value
+            return value
 
-    def id_to_media_overlay(self, id: str) -> Optional[str]:
-        return self.manifest_map[id].get("media-overlay")
+    def id_to_media_overlay(
+        self, 
+        id: str, 
+        value: Union[UndefinedType, None, str] = undefined, 
+    ) -> Optional[str]:
+        if value is undefined:
+            return self.manifest_map[id].get("media-overlay")
+        elif value is None:
+            return self.manifest_map[id].attrib.pop("media-overlay")
+        else:
+            self.manifest_map[id].attrib["media-overlay"] = value
+            return value
 
     def id_to_spine_itemref(self, id: str):
         return self.spine_map[id]

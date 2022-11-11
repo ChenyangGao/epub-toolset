@@ -7,6 +7,7 @@ __all__ = ["OpfWrapper", "ManifestItem", "SpineItemref"]
 
 from os import PathLike
 from typing import AnyStr, Iterator, NamedTuple, Optional, Union
+from urllib.parse import quote, unquote
 
 from lxml.etree import Element, _Element
 
@@ -87,7 +88,7 @@ class OpfWrapper(OpfParser):
         item = self.manifest_map[id]
         return ManifestItem(
             id            = id, 
-            href          = item.attrib["href"], 
+            href          = self.id_to_href(id), 
             bookpath      = self.id_to_bookpath(id), 
             media_type    = item.get("media-type", "application/octet-stream"), 
             properties    = item.get("properties"), 
@@ -127,7 +128,7 @@ class OpfWrapper(OpfParser):
         if media_type is None:
             raise ValueError("Unable to determine media-type (media_type)")
 
-        attrib = {"id": id, "href": href, "media-type": media_type}
+        attrib = {"id": id, "href": quote(href, ":/#"), "media-type": media_type}
         if properties is not None:
             attrib["properties"] = properties
         if fallback is not None:

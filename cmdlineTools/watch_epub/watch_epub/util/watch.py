@@ -6,11 +6,11 @@ __version__ = (0, 1, 2)
 __all__ = ["watch"]
 
 # TODO: 移动文件到其他文件夹，那么这个文件所引用的那些文件，相对位置也会改变
-# TODO: 对于自己引用自己的，如果写出自己文件名的，要更新，但是如果路径是 ""，则忽略
-# TODO: 应该专门写一个类，用来增删改查文件的引用和被引用关系，解除和 EpubFileEventHandler 的耦合
 # TODO: 在 windows 下文件被占用时，因为 PermissionError 不可打开，是否需要等会再去尝试打开，以及尝试多少次？
 # TODO: 新增多线程或协程处理机制，加快效率，以及防止主线程崩溃
 # TODO: 对于某些需要同步的文件，由于它们是不规范的，导致崩溃，这时就要跳过
+# TODO: 判断文件是否改变：文件没变 <=> stat.st_mtime_ns没变 或 stat.st_size和md5没变
+# TODO: 处理文件时，如果发现文件变了（和维护的最新信息不同），则需要先 analyse，如果分析后，得出处理还要继续才继续
 
 import logging
 import os.path as syspath
@@ -36,24 +36,25 @@ from util.pathutils import reference_path, path_posix_to_sys
 from util.opfwrapper import OpfWrapper
 
 
-#
+# Match src or href attribute in xml/html/xhtml
 CRE_REF: Final[Pattern] = re_compile(
     r'(<[^/][^>]*?[\s:](?:href|src)=")(?P<link>[^>"]+)')
-#
+# Match url function in css text
 CRE_URL: Final[Pattern] = re_compile(
     r'\burl\(\s*(?:"(?P<dlink>(?:[^"]|(?<=\\)")+)"|'
     r'\'(?P<slink>(?:[^\']|(?<=\\)\')+)\'|(?P<link>[^)]+))\s*\)')
-#
+# Match <style> element in html/xhtml
 CRE_EL_STYLE: Final[Pattern] = re_compile(r"<style\b[^>]*>(?P<text>[\s\S]+?)</style>")
-#
+# Match style attribute in html/xhtml
 CRE_INLINE_STYLE: Final[Pattern] = re_compile(r'<[^/>][^>]*?\sstyle="(?P<attr>[^"]+)"')
 
 
 MIME_REGISTRY = {}
-OP_REGISTRY = {}
+UPDATE_REGISTRY = {}
 
 
-def mimes_register(*media_types):
+def mime_register(*media_types):
+    """"""
     def register(fn):
         for mime in media_types:
             MIME_REGISTRY[mime] = fn
@@ -61,10 +62,11 @@ def mimes_register(*media_types):
     return register
 
 
-def op_register(*op_types):
+def updater_register(*op_types):
+    """"""
     def register(fn):
         for op in op_types:
-            OP_REGISTRY[op] = fn
+            UPDATE_REGISTRY[op] = fn
         return fn
     return register
 
@@ -78,8 +80,9 @@ def analyze(bookpath, text, mime=None):
 
 
 def update(text, src_bookpath, dest_bookpath, refby_bookpath, typelist):
+    """"""
     for type_, *_ in typelist:
-        text = OP_REGISTRY[type_](
+        text = UPDATE_REGISTRY[type_](
             text, src_bookpath, dest_bookpath, refby_bookpath)
     return text
 
@@ -93,7 +96,7 @@ def fileter_localpath(bookpath, hrefs):
         yield reference_path(bookpath, phref.path, "/")
 
 
-@mimes_register("text/css")
+@mime_register("text/css")
 def analyze_css(bookpath, text):
     """"""
     return {
@@ -106,7 +109,7 @@ def analyze_css(bookpath, text):
     }
 
 
-@mimes_register("text/html", "application/xhtml+xml")
+@mime_register("text/html", "application/xhtml+xml")
 def analyze_html(bookpath, text):
     """"""
     return {
@@ -118,7 +121,7 @@ def analyze_html(bookpath, text):
         )), 
         "attr_style": Counter(fileter_localpath(
             bookpath, (
-                unquote(m[m.lastgroup])
+                m[m.lastgroup]
                 for m0 in CRE_INLINE_STYLE.finditer(text)
                 for m in CRE_URL.finditer(unquote(m0["attr"]))
             )
@@ -133,7 +136,7 @@ def analyze_html(bookpath, text):
     }
 
 
-@mimes_register("application/x-dtbncx+xml")
+@mime_register("application/x-dtbncx+xml")
 def analyze_ncx(bookpath, text):
     """"""
     return {
@@ -146,7 +149,7 @@ def analyze_ncx(bookpath, text):
     }
 
 
-@op_register("css")
+@updater_register("css")
 def update_css(text, src_bookpath, dest_bookpath, refby_bookpath):
     def repl(m):
         href = unquote(m[m.lastgroup])
@@ -154,8 +157,8 @@ def update_css(text, src_bookpath, dest_bookpath, refby_bookpath):
         if phref.scheme or phref.path in ("", "."):
             return m[0]
         if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
-            return 'url("%s")' % quote(
-                urlunparse(phref._replace(path=relpath)))
+            return "url('%s')" % quote(
+                urlunparse(phref._replace(path=relpath)), ":/#")
         else:
             return m[0]
 
@@ -163,7 +166,7 @@ def update_css(text, src_bookpath, dest_bookpath, refby_bookpath):
     return CRE_URL.sub(repl, text)
 
 
-@op_register("attr_href_src")
+@updater_register("attr_href_src")
 def update_attr_href_src(text, src_bookpath, dest_bookpath, refby_bookpath):
     def repl(m):
         text = m[0]
@@ -174,7 +177,7 @@ def update_attr_href_src(text, src_bookpath, dest_bookpath, refby_bookpath):
         if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
             start = m.start()
             begin = m.start("link")
-            return text[:begin-start] + quote(urlunparse(phref._replace(path=relpath)))
+            return text[:begin-start] + quote(urlunparse(phref._replace(path=relpath)), ":/#")
         else:
             return text
 
@@ -182,12 +185,12 @@ def update_attr_href_src(text, src_bookpath, dest_bookpath, refby_bookpath):
     return CRE_REF.sub(repl, text)
 
 
-@op_register("attr_style")
+@updater_register("attr_style")
 def update_attr_style(text, src_bookpath, dest_bookpath, refby_bookpath):
     def repl(m):
         text = m[0]
         text_attr = m["attr"]
-        text_attr_new = CRE_URL.sub(sub_repl, text_attr)
+        text_attr_new = quote(CRE_URL.sub(sub_repl, unquote(text_attr)), ":/#")
         if text_attr == text_attr_new:
             return text
         else:
@@ -199,13 +202,13 @@ def update_attr_style(text, src_bookpath, dest_bookpath, refby_bookpath):
             return text_new
 
     def sub_repl(m):
-        href = unquote(m[m.lastgroup])
+        href = m[m.lastgroup]
         phref = urlparse(href)
         if phref.scheme or phref.path in ("", "."):
             return m[0]
         if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
-            return 'url("%s")' % quote(
-                urlunparse(phref._replace(path=relpath)))
+            return "url('%s')" % quote(
+                urlunparse(phref._replace(path=relpath)), ":/#")
         else:
             return m[0]
 
@@ -213,7 +216,7 @@ def update_attr_style(text, src_bookpath, dest_bookpath, refby_bookpath):
     return CRE_INLINE_STYLE.sub(repl, text)
 
 
-@op_register("el_style")
+@updater_register("el_style")
 def update_el_style(text, src_bookpath, dest_bookpath, refby_bookpath):
     def repl(m):
         text = m[0]
@@ -236,7 +239,7 @@ def update_el_style(text, src_bookpath, dest_bookpath, refby_bookpath):
             return m[0]
         if reference_path(src_bookpath, phref.path, "/") == src_bookpath:
             return 'url("%s")' % quote(
-                urlunparse(phref._replace(path=relpath)))
+                urlunparse(phref._replace(path=relpath)), ":/#")
         else:
             return m[0]
 
@@ -267,8 +270,8 @@ class EpubFileEventHandler(FileSystemEventHandler):
                     return ignore(bookpath)
             self.ignore = ignore_fn
 
-        self._bookpath_to_mtime: dict[str, int] = {
-            bookpath: stat(opfwrapper.bookpath_to_path(bookpath)).st_mtime_ns
+        self._bookpath_to_stat: dict[str, int] = {
+            bookpath: stat(opfwrapper.bookpath_to_path(bookpath))
             for bookpath in opfwrapper.bookpath_to_id
         }
 
@@ -292,6 +295,17 @@ class EpubFileEventHandler(FileSystemEventHandler):
         media_type = self.get_media_type(bookpath)
         return media_type in MIME_REGISTRY
 
+    def readfile(self, bookpath):
+        last_stat = stat(path)
+        path = self._opfwrapper.bookpath_to_path(bookpath)
+        while True:
+            data = open(path, "rb").read()
+            cur_stat = stat(path)
+            if last_stat.st_mtime_ns == cur_stat.st_mtime_ns:
+                break
+            last_stat = cur_stat
+        return data, last_stat
+
     def _add_ref(self, bookpath, mime=None):
         if mime is None:
             mime = self.get_media_type(bookpath)
@@ -300,11 +314,19 @@ class EpubFileEventHandler(FileSystemEventHandler):
         path = self._opfwrapper.bookpath_to_path(bookpath)
         try:
             text = open(path, encoding="utf-8").read()
-        except (FileNotFoundError, PermissionError):
-            # TODO: 在 Windows 下，新增文件过快时，文件还没复制好，就已经去读了，就会报错 PermissionError
+        except FileNotFoundError:
             self.logger.error(
                 "The add_ref(bookpath=%r, mime=%r) was skipped, "
                 "because the file %r was deleted or moved" % (
+                    bookpath, mime, path
+                )
+            )
+            return
+        except PermissionError:
+            # TODO: 在 Windows 下，新增文件过快时，文件还没复制好，就已经去读了，就会报错 PermissionError
+            self.logger.error(
+                "The add_ref(bookpath=%r, mime=%r) was skipped, "
+                "because the file %r being occupied" % (
                     bookpath, mime, path
                 )
             )
@@ -334,11 +356,12 @@ class EpubFileEventHandler(FileSystemEventHandler):
         ref_to_refby, refby_to_ref = self._ref_to_refby, self._refby_to_ref
 
         d_refby = ref_to_refby.get(src_bookpath)
-        if d_refby:
+        if d_refby is not None:
             for refset in d_refby.values():
                 for ref in refset:
                     refby_to_ref[ref].discard(src_bookpath)
                     refby_to_ref[ref].add(dest_bookpath)
+            ref_to_refby[dest_bookpath] = ref_to_refby.pop(src_bookpath)
 
         refset = refby_to_ref.get(src_bookpath)
         if refset is not None:
@@ -346,9 +369,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 for d in ref_to_refby[ref].values():
                     if src_bookpath in d:
                         d[dest_bookpath] = d.pop(src_bookpath)
-
-        ref_to_refby[dest_bookpath] = ref_to_refby.pop(src_bookpath)
-        refby_to_ref[dest_bookpath] = refby_to_ref.pop(src_bookpath)
+            refby_to_ref[dest_bookpath] = refby_to_ref.pop(src_bookpath)
 
     def _get_refby(self, bookpath):
         refby = {}
@@ -376,8 +397,8 @@ class EpubFileEventHandler(FileSystemEventHandler):
             refby_path = to_path(refby_bookpath)
 
             try:
-                # TODO: 如果 mtime 变了，则需要先 analyse，如果还引用 src_bookpath，则尝试更新
-                if stat(refby_path).st_mtime_ns != self._bookpath_to_mtime[refby_bookpath]:
+                refby_stat = stat(refby_path)
+                if refby_stat.st_mtime_ns != self._bookpath_to_stat[refby_bookpath].st_mtime_ns:
                     self.logger.error(
                         "Automatic update reference %r -> %r was skipped, "
                         "because the file %r was deleted or moved" % (
@@ -406,32 +427,31 @@ class EpubFileEventHandler(FileSystemEventHandler):
             return
 
         opfwrapper = self._opfwrapper
+        bookpath_to_stat = self._bookpath_to_stat
         path = realpath(event.src_path)
         bookpath = opfwrapper.path_to_bookpath(path)
 
-        if bookpath in opfwrapper.bookpath_to_id:
-            try:
-                mtime = stat(path).st_mtime_ns
-            except FileNotFoundError:
+        try:
+            bookpath_stat = stat(path)
+        except FileNotFoundError:
+            if self.ignore(bookpath):
+                self.logger.debug(
+                    "Ignored created event, because it is specified to be ignored: %r" % path)
+            else:
                 self.logger.error(
                     "Ignored created event, maybe it was deleted or moved: %r" % path)
-                self.on_deleted(FileDeletedEvent(path))
+            return
+
+        if bookpath in opfwrapper.bookpath_to_id:
+            if bookpath_stat.st_mtime_ns == bookpath_to_stat[bookpath].st_mtime_ns:
+                self.logger.debug(
+                    "Ignored created event, because it was already created: %r" % event.src_path)
                 return
-            else:
-                if mtime == self._bookpath_to_mtime[bookpath]:
-                    return
-                self.on_deleted(FileDeletedEvent(path))
+            self.on_deleted(FileDeletedEvent(path))
 
         if self.ignore(bookpath):
             self.logger.debug(
                 "Ignored created event, because it is specified to be ignored: %r" % path)
-            return
-
-        try:
-            self._bookpath_to_mtime[bookpath] = stat(path).st_mtime_ns
-        except FileNotFoundError:
-            self.logger.error(
-                "Ignored created event, maybe it was deleted or moved: %r" % path)
             return
 
         if self.is_reffile(bookpath):
@@ -441,16 +461,16 @@ class EpubFileEventHandler(FileSystemEventHandler):
                 self.logger.error(
                     "Ignored created event, maybe it was deleted or "
                     "moved during processing: %r" % path)
-                del self._bookpath_to_mtime[bookpath]
                 return
             except UnicodeDecodeError:
-                self.logger.debug(
-                    "Ignored created event, because it is a referencing file, "
-                    "but cannot be parsed: %r" % path)
-                del self._bookpath_to_mtime[bookpath]
+                choice = input('Created event occured, but the file %r cannot be decoded. '
+                    'Set media-type to "application/octet-stream" (or skip): ([Y]/n)' % path)
+                if choice.strip().lower() in ("", "y", "yes"):
+                    opfwrapper.add(bookpath=bookpath, media_type="application/octet-stream")
                 return
 
         opfwrapper.add(bookpath=bookpath)
+        bookpath_to_stat[bookpath] = bookpath_stat
         self.logger.info("Created file: %r" % path)
 
     def on_deleted(self, event):
@@ -462,7 +482,7 @@ class EpubFileEventHandler(FileSystemEventHandler):
         def delete(bookpath):
             item = opfwrapper.delete(bookpath=bookpath)
             self._delete_ref(bookpath, item.media_type)
-            self._bookpath_to_mtime.pop(bookpath, None)
+            self._bookpath_to_stat.pop(bookpath, None)
             logger.info("Deleted file: %r" % opfwrapper.bookpath_to_path(bookpath))
 
         if event.is_directory:
@@ -474,7 +494,8 @@ class EpubFileEventHandler(FileSystemEventHandler):
             delete(bookpath)
 
     def on_modified(self, event):
-        # NOTE: When a file is modified, two modified events will be triggered, 
+        # NOTE: In some platforms (operating systems or file systems), 
+        #       when a file is modified, two modified events will be triggered, 
         #       the first is truncation, and the second is writing.
         if event.is_directory:
             self.logger.debug(
@@ -499,15 +520,17 @@ class EpubFileEventHandler(FileSystemEventHandler):
             return
 
         try:
-            mtime = stat(path).st_mtime_ns
+            bookpath_stat = stat(path)
         except FileNotFoundError:
             self.logger.error(
                 "Ignored modified event, maybe it was deleted or moved: %r" % path)
         else:
-            if self._bookpath_to_mtime.get(bookpath) == mtime:
+            last_stat = self._bookpath_to_stat.get(bookpath)
+            if last_stat and last_stat.st_mtime_ns == bookpath_stat.st_mtime_ns:
                 self.logger.debug(
                     "Ignored modified event, because its mtime is already latest: %r" % path)
                 return
+            self._bookpath_to_stat[bookpath] = bookpath_stat
 
         self._delete_ref(bookpath)
         self._add_ref(bookpath)
@@ -554,20 +577,21 @@ class EpubFileEventHandler(FileSystemEventHandler):
             del opfwrapper.href_to_id[src_href]
             opfwrapper.href_to_id[dest_href] = id
             opfwrapper.id_to_bookpath[id] = dest_bookpath
-            opfwrapper.manifest_map[id].set("href", dest_href)
+            opfwrapper.id_to_href(id, dest_href)
             dest_media_type = src_media_type
         else:
             opfwrapper.delete(bookpath=src_bookpath)
             opfwrapper.add(bookpath=dest_bookpath, media_type=dest_media_type)
 
         self._transfer_ref(src_bookpath, dest_bookpath)
-        self._bookpath_to_mtime[dest_bookpath] = self._bookpath_to_mtime.pop(src_bookpath)
+        self._bookpath_to_stat[dest_bookpath] = self._bookpath_to_stat.pop(src_bookpath)
         refby = self._get_refby(dest_bookpath)
         if dest_media_type not in MIME_REGISTRY:
             refby.pop(dest_bookpath, None)
 
         self.logger.info("Moved file: from %r to %r" % (src_path, dest_path))
         self._update_refby(src_bookpath, dest_bookpath, refby)
+
 
 def watch(
     opfwrapper: OpfWrapper, /, 
@@ -591,20 +615,4 @@ def watch(
         observer.join()
     opfwrapper.dump()
     logger.info("Done!")
-
-
-# def read(self, bookpath):
-# file mtime, size, md5
-#     # 还要判断 md5 是否改变
-#     # 只对 reffile 检查 mtime，md5
-#     mtime = self._bookpath_to_mtime[bookpath]
-#     path = self._opfwrapper.bookpath_to_path(bookpath)
-#     while True:
-#         data = open(path, "rb").read()
-#         mtime_cur = stat(path).st_mtime
-#         if mtime == mtime_cur:
-#             break
-#         mtime = mtime_cur
-
-
 
