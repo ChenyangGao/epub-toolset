@@ -13,7 +13,7 @@ from typing import Callable, Generator, Iterable, NamedTuple, TypeVar
 
 from util.group import groupdict
 from util.fileinfo import FileInfo
-from util.progress import clear_last_lines, output
+from util.progress import clear_lines, output
 
 
 T = TypeVar("T")
@@ -25,6 +25,9 @@ class FileSizeMd5(NamedTuple):
     md5: str
 
 
+# TODO: 再增加函数：1. 允许传入路径，然后计算所有的key的集合
+#                   2.允许传入2组路径，A用于获取key集合，B用于和A做比对，找出A中有的key判定为重复
+# TODO: dirs改成paths，允许传入文件路径、文件夹路径、路径迭代器
 def find_dup_files(
     *dirs: bytes | str | PathLike, 
     key: Callable[[T], K], 
@@ -47,9 +50,9 @@ def find_dup_files(
                     yield fi
                     if last_nlines:
                         if last_nlines < 0:
-                            clear_last_lines(3)
+                            clear_lines(4)
                         else:
-                            clear_last_lines(last_nlines-1)
+                            clear_lines(last_nlines)
                     # NOTE: You can use the following module to generate styled string in terminal:
                     #     https://pypi.org/project/colored/
                     k = key(fi)
@@ -61,9 +64,9 @@ def find_dup_files(
                     last_nlines = output("-" * get_terminal_size().columns + msg)
             if last_nlines:
                 if last_nlines < 0:
-                    clear_last_lines(3)
+                    clear_lines(4)
                 else:
-                    clear_last_lines(last_nlines-1)
+                    clear_lines(last_nlines)
         it = wrap_with_progress(dirs)
     else:
         it = chain.from_iterable(map(fileinfo_iter, dirs))

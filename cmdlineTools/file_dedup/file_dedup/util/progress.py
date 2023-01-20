@@ -4,10 +4,11 @@
 __author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
 __version__ = (0, 0, 2)
 __all__ = [
-    "calc_lines", "output", "clear_lines", "clear_last_lines", 
-    "print_iter", 
+    "EraseLineType", "EraseScreenType", "calc_lines", "output", 
+    "clear", "clear_up", "clear_down", "clear_lines", "print_iter", 
 ]
 
+from enum import IntEnum
 from inspect import isgeneratorfunction
 from os import get_terminal_size
 from re import compile as re_compile, Pattern
@@ -32,14 +33,65 @@ except ImportError:
         wcwidth = None
 
 CRE_VT100_ESCSEQ: Final[Pattern[str]] = re_compile("\x1b[([{][0-9;]*\\w")
+DEFAULT_CWMAP: Final[dict[str, int]] = {}
 write = stdout.write
 
 T = TypeVar("T")
 
 
+class _Ensured_Enum_Mixin:
+    @classmethod
+    def ensure(cls, val, /):
+        if isinstance(val, cls):
+            return val
+        try:
+            return cls[val]
+        except (KeyError, TypeError):
+            return cls(val)
+
+    @classmethod
+    def map(cls, val):
+        inst = cls.ensure(val)
+        return cls.__VT100_ESCSEQMAP__[inst.value]
+
+
+class EraseLineType(_Ensured_Enum_Mixin, IntEnum):
+    current_to_end = 0
+    current_to_start = 1
+    entire_line = 2
+    end = 0
+    start = 1
+    right = 0
+    left = 1
+    entire = 2
+
+    __VT100_ESCSEQMAP__ = {
+        0: "\x1b[K",
+        1: "\x1b[1K",
+        2: "\x1b[2K",
+    }
+
+
+class EraseScreenType(_Ensured_Enum_Mixin, IntEnum):
+    erase_down = 0
+    erase_up = 1
+    entire_screen = 2
+    down = 0
+    up = 1
+    end = 0
+    start = 1
+    entire = 2
+
+    __VT100_ESCSEQMAP__ = {
+        0: "\x1b[J",
+        1: "\x1b[1J",
+        2: "\x1b[2J",
+    }
+
+
 def calc_lines(
     text: str, /, 
-    cwmap: None | dict[str, int] = None, 
+    cwmap: dict[str, int] = DEFAULT_CWMAP, 
     cwcall: Callable[[str], int] = wcwidth, 
     line_width: None | int = None, 
 ) -> int:
@@ -58,7 +110,7 @@ def calc_lines(
         elif wc == "\r":
             ncols = 0
         else:
-            if cwmap and wc in cwmap:
+            if wc in cwmap:
                 wcw = cwmap[wc]
             elif cwcall:
                 wcw = cwcall(wc)
@@ -82,18 +134,107 @@ def output(text: str, /) -> int:
     return calc_lines(text)
 
 
-def clear_lines(offset: int = 0, /):
-    if offset > 0:
+def clear(
+    erase_screen_type: int | str | EraseScreenType = EraseScreenType.entire_screen, 
+):
+    # ANSI/VT100 Terminal Control Escape Sequences
+    # See detail:
+    #     - https://www.cse.psu.edu/~kxc104/class/cmpen472/16f/hw/hw8/vt100ansi.htm
+    #     - https://espterm.github.io/docs/VT100%20escape%20codes.html
+    # \x1b[nA   Cursor Up
+    #               Moves the cursor up by *n* rows; the default count is 1.
+    # \x1b[nB   Cursor Down
+    #               Moves the cursor down by *n* rows; the default count is 1.
+    # \x1b[nC   Cursor Forward (Right)
+    #               the cursor forward by *n* columns; the default count is 1.
+    # \x1b[nD   Cursor Backward(Left) 
+    #               Moves the cursor backward by *n* columns; the default count is 1.
+    # \x1b[x;yH Cursor Home
+    #               Sets the cursor position where subsequent text will begin. 
+    #               If no x(row)/y(column) parameters are provided (ie. \x1b[H), 
+    #               the cursor will move to the homeposition, at the upper 
+    #               left of the screen.
+    # \x1b[x;yf Force Cursor Position
+    #               Identical to *Cursor Home*.
+    #
+    # \x1b[s    Save Cursor
+    #               Save current cursor position.
+    # \x1b[u    Unsave Cursor
+    #               Restores cursor position after a Save Cursor.
+    # \x1b7     Save Cursor & Attrs
+    #               Save current cursor position.
+    # \x1b8     Restore Cursor & Attrs
+    #               Restores cursor position after a Save Cursor.
+    #
+    # \x1b[K    Erase End of Line.
+    #               Erases from the current cursor position to the end of the current line.
+    # \x1b[1K   Erase Start of Line
+    #               Erases from the current cursor position to the start of the current line.
+    # \x1b[2K   Erase Line
+    #               Erases the entire current line.
+    # \x1b[J    Erase Down
+    #               Erases the screen from the current line down to the bottom of the screen.
+    # \x1b[1J   Erase Up
+    #               Erases the screen from the current line up to the top of the screen.
+    # \x1b[2J   Erase Screen
+    #               Erases the screen with the background colour and moves the cursor to home.
+    write(EraseScreenType.map(erase_screen_type))
+
+
+def clear_up(
+    offset: int = 0, /, 
+    erase_line_type: int | str | EraseLineType = EraseLineType.current_to_end, 
+    stay: bool = True, 
+):
+    if offset < 0:
+        clear_down(-offset, erase_line_type, stay)
+    elif stay:
+        write(f"\x1b[{offset}A")
+        clear_down(-offset, erase_line_type, False)
+    else:
+        escseq = EraseLineType.map(erase_line_type)
+        if offset:
+            write(escseq + ("\x1b[1A" + escseq) * offset)
+        else:
+            write(escseq)
+
+
+def clear_down(
+    offset: int = 0, /, 
+    erase_line_type: int | str | EraseLineType = EraseLineType.current_to_end, 
+    stay: bool = True, 
+):
+    if offset < 0:
+        clear_up(-offset, erase_line_type, stay)
+    elif stay:
         write(f"\x1b[{offset}B")
-    elif offset < 0:
-        offset = -offset
-    write("\r\x1b[K")
-    if offset:
-        write("\x1b[1A\x1b[K" * offset)
+        clear_up(-offset, erase_line_type, stay)
+    else:
+        escseq = EraseLineType.map(erase_line_type)
+        if offset:
+            write(escseq + ("\x1b[1B" + escseq) * offset)
+        else:
+            write(escseq)
 
 
-def clear_last_lines(offset: int = 0, /):
-    clear_lines(-offset)
+def clear_lines(
+    count: int = 1, /, 
+    upside: None | bool = None, 
+):
+    if count == 0:
+        return
+    write("\r")
+    if count < 0:
+        if upside is None:
+            clear(EraseScreenType.entire_screen)
+        elif upside:
+            clear(EraseScreenType.erase_up)
+        else:
+            clear(EraseScreenType.erase_down)
+    elif upside is None or upside:
+        clear_up(count-1, stay=False)
+    else:
+        clear_down(count-1, stay=False)
 
 
 def print_iter(
@@ -135,11 +276,7 @@ def print_iter(
                 if first_loop:
                     first_loop = False
                 else:
-                    # TODO: Up to the top.
-                    if last_nlines < 0:
-                        clear_last_lines(get_terminal_size().lines-1)
-                    else:
-                        clear_last_lines(last_nlines-1)
+                    clear_lines(last_nlines)
                 write(msg)
                 if calc_nlines is not None:
                     last_nlines = calc_lines(msg)
@@ -149,10 +286,7 @@ def print_iter(
         if isgen:
             if e.args and e.args[0] is not None:
                 if not first_loop:
-                    if last_nlines < 0:
-                        clear_last_lines(get_terminal_size().lines-1)
-                    else:
-                        clear_last_lines(last_nlines-1)
+                    clear_lines(last_nlines)
                 write(e.args[0])
         return
     if isgen:
@@ -162,10 +296,7 @@ def print_iter(
             if e.args and e.args[0] is not None:
                 if not first_loop:
                     if last_nlines:
-                        if last_nlines < 0:
-                            clear_last_lines(get_terminal_size().lines-1)
-                        else:
-                            clear_last_lines(last_nlines-1)
+                        clear_lines(last_nlines)
                 write(e.args[0])
 
 

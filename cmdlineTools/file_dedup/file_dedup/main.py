@@ -3,6 +3,10 @@
 
 # TODO: 允许过滤掉某些文件夹或文件名
 # TODO: 如果文件名里面有空格呢
+# TODO: 支持读取标准输入（支持管道）作为输入
+# TODO: 支持 A 和 B 做比较，如果 B 中有和 A 中 key 相同的文件，删除之
+# TODO: 有一些文件是删除失败的，找出原因
+# TODO: 支持参数，用remove还是removedirs
 
 __author__ = "ChenyangGao <https://chenyanggao.github.io/>"
 __version__ = (0, 0, 1)
@@ -12,7 +16,7 @@ __all__ = ["main"]
 from io import StringIO, TextIOBase
 from os import remove, PathLike
 from os.path import join
-from sys import argv, stdout
+from sys import argv, stdin, stdout
 from tempfile import gettempdir
 from typing import Generator
 from uuid import uuid4
@@ -20,7 +24,7 @@ from uuid import uuid4
 from util.fileinfo import FileInfo
 from util.finddups import find_dup_files_by_size_md5, FileSizeMd5
 from util.openpath import openpath
-from util.progress import output, clear_last_lines
+from util.progress import output, clear_lines
 
 
 write = stdout.write
@@ -44,13 +48,9 @@ def dumps_duplicate_files_to_be_deleted(
 
 
 def parse_duplicate_files_to_be_deleted(
-    dumps: str | TextIOBase, /
+    dumps: str | TextIOBase = stdin, /
 ) -> Generator[str, None, None]:
-    f: TextIOBase
-    if isinstance(dumps, str):
-        f = StringIO(dumps)
-    else:
-        f = dumps
+    f: TextIOBase = StringIO(dumps) if isinstance(dumps, str) else dumps
     for line in f:
         if line.startswith("#") or not line.strip():
             continue
@@ -83,8 +83,7 @@ def main(argv: list[str]):
                 open(temppath, encoding="utf-8")))
             total = len(paths)
             for path in paths:
-                if last_nlines:
-                    clear_last_lines(last_nlines-1)
+                clear_lines(last_nlines)
                 try:
                     remove(path)
                     n_succ += 1
@@ -95,8 +94,7 @@ def main(argv: list[str]):
                 last_nlines = output(f"""
 \x1b[38;5;15m\x1b[48;5;1m\x1b[5mPROCESSING\x1b[0m success: \x1b[1m{n_succ}\x1b[0m / failed: \x1b[1m{n_fail}\x1b[0m / total: \x1b[1m{total}\x1b[0m
 """)
-            if last_nlines:
-                clear_last_lines(last_nlines-1)
+            clear_lines(last_nlines)
             output(f"""
 \x1b[38;5;15m\x1b[48;5;2m\x1b[5mRESULT\x1b[0m success: \x1b[1m{n_succ}\x1b[0m / failed: \x1b[1m{n_fail}\x1b[0m / total: \x1b[1m{total}\x1b[0m
 """)
