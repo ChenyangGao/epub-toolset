@@ -1,99 +1,108 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-from __future__ import annotations
-
 __author__ = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 0, 1)
-__all__ = ["BaseFileInfo", "FileInfo"]
+__version__ = (0, 0, 2)
+__all__ = ["FileInfo"]
 
-from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
-from os import fsdecode, stat, DirEntry, PathLike
-from os.path import isdir
-from typing import Annotated, Callable, Generator, Iterable, NamedTuple
+from hashlib import algorithms_available
+from os import fsdecode, stat, stat_result, DirEntry, PathLike
+from os.path import basename, dirname, splitext, isdir
+from typing import Any, Callable, Generator, Type, TypeVar
 
 from util.filehash import filehash
 from util.iterpath import path_scan
+from util.lazyproperty import lazyproperty
 
 
-class BaseFileInfo(ABC):
-    path: str
+T = TypeVar("T", bound="FileInfo")
 
-    @abstractmethod
-    def from_path(
-        cls, /, 
+
+class FileInfo:
+    """
+    """
+    def __init__(
+        self, /, 
         path: bytes | str | PathLike, 
-    ) -> BaseFileInfo:
-        ...
-
-    @classmethod
-    @abstractmethod
-    def iter(
-        cls, /, 
-        path: bytes | str | PathLike, 
-    ) -> Iterable[BaseFileInfo]:
-        ...
-
-
-@BaseFileInfo.register
-class FileInfo(NamedTuple):
-    path: str
-    size: int
-    mtime_ns: int
-    md5: str
-
-    @classmethod
-    def from_path(
-        cls, /, 
-        path: bytes | str | PathLike, 
-    ) -> FileInfo:
+    ):
         if isdir(path):
             raise IsADirectoryError(path)
-        path_ = fsdecode(path)
-        fstat = stat(path_)
-        return cls(
-            path     = path_, 
-            size     = fstat.st_size, 
-            mtime_ns = fstat.st_mtime_ns, 
-            md5      = filehash(path_), 
-        )
+        self.path: str = fsdecode(path)
+
+    @lazyproperty
+    def dir(self, /) -> str:
+        return dirname(self.path)
+
+    @lazyproperty
+    def name(self, /) -> str:
+        return basename(self.path)
+
+    @lazyproperty
+    def stem(self, /) -> str:
+        return splitext(basename(self.path))[1]
+
+    @lazyproperty
+    def ext(self, /) -> str:
+        return splitext(self.path)[1]
+
+    @property
+    def stat(self, /) -> stat_result:
+        return stat(self.path)
+
+    def hash(self, /, algname: str = "md5") -> str:
+        attrname = algname.replace("-", "_")
+        try:
+            return self.__dict__[attrname]
+        except:
+            value = self.__dict__[attrname] = filehash(self.path, algname)
+            return value
+        raise ValueError(f"Hash algorithm name unavailable: {algname!r}")
+
+    def __fspath__(self):
+        return self.path
+
+    def __repr__(self) -> str:
+        return f"{type(self).__module__}.{type(self).__qualname__}({self.path!r})"
+
+    def __getattr__(self, name: str, /):
+        if name in algorithms_available:
+            return self.hash(name)
+        if "_" in name:
+            name2 = name.replace("_", "-")
+            if name2 in algorithms_available:
+                return self.hash(name2)
+        raise AttributeError(name)
+
+    def __setattr__(self, name: str, value, /):
+        if name in self.__dict__:
+            raise AttributeError(f"Property {name!r} can only be set once")
+        self.__dict__[name] = value
 
     @classmethod
     def iter(
-        cls, /, 
+        cls: Type[T], /, 
         path: bytes | str | PathLike = ".", 
-        max_workers: int = 1, 
-        skip_oserror: bool = False, 
         filter_func: None | Callable[[DirEntry], bool] = None, 
-        follow_symlinks: bool = False, 
-    ) -> Generator[FileInfo, None, None]:
+        followlinks: bool = False, 
+        onerror: None | Callable[[BaseException], Any] = None, 
+    ) -> Generator[T, None, None]:
         """
         """
-        paths = (p for p in path_scan(
+        if not isdir(path):
+            raise NotADirectoryError(path)
+        paths = path_scan(
             path, # type: ignore
             filter_func=filter_func, 
-            follow_symlinks=follow_symlinks, 
-        ) if p.is_file(follow_symlinks=follow_symlinks))
-        make_fileinfo = cls.from_path
-        if max_workers == 1:
-            for p in paths:
+            followlinks=followlinks, 
+            onerror=onerror, 
+        )
+        for p in paths:
+            if p.is_file(followlinks=followlinks):
                 try:
-                    yield make_fileinfo(p)
-                except OSError:
-                    if not skip_oserror:
+                    yield cls(p)
+                except KeyboardInterrupt:
+                    raise
+                except BaseException as exc:
+                    if not (onerror is None or onerror(exc) is None):
                         raise
-        else:
-            ex = ThreadPoolExecutor(max_workers)
-            submit = ex.submit
-            try:
-                futures = [submit(make_fileinfo, p) for p in paths]
-                for fu in futures:
-                    try:
-                        yield fu.result()
-                    except OSError:
-                        if not skip_oserror:
-                            raise
-            finally:
-                ex.shutdown(False, cancel_futures=True)
 

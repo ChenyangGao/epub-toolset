@@ -78,7 +78,7 @@ def find_dup_files_by_size_md5(
     *dirs: bytes | str | PathLike, 
     show_progress: bool = False, 
     filter_func: None | Callable[[DirEntry], bool] = None, 
-    follow_symlinks: bool = False, 
+    followlinks: bool = False, 
 ) -> Generator[tuple[FileSizeMd5, list[FileInfo]], None, None]:
     return find_dup_files(
         *dirs, 
@@ -87,7 +87,7 @@ def find_dup_files_by_size_md5(
             FileInfo.iter, 
             skip_oserror=True, 
             filter_func=filter_func, 
-            follow_symlinks=follow_symlinks, 
+            followlinks=followlinks, 
         ), 
         show_progress=show_progress, 
     )

@@ -314,12 +314,23 @@ if __name__ == "__main__":
         _ = yield
         try:
             while True:
-                _ = yield f"PROCESSED: {n}/{total}\nCOST: {perf_counter() - start_t:.6f} s\n"
+                _ = yield f"""\
+PROCESSED: {n}/{total}
+COST: {perf_counter() - start_t:.6f} s
+"""
                 n += 1
         except StopIteration:
-            return f"[FAILED] PROCESSED PARTIAL\n    TOTAL: {n}\n    COST: {perf_counter() - start_t:.6f} s\n"
+            return f"""\
+[FAILED] PROCESSED PARTIAL
+    TOTAL: {n}
+    COST: {perf_counter() - start_t:.6f} s
+"""
         except GeneratorExit:
-            return f"[SUCCESS] PROCESSED ALL\n    TOTAL: {n}\n    COST: {perf_counter() - start_t:.6f} s\n"
+            return f"""\
+[SUCCESS] PROCESSED ALL
+    TOTAL: {n}
+    COST: {perf_counter() - start_t:.6f} s
+"""
 
     def gen_batch_count_time(total="?"):
         start_t = perf_counter()
@@ -330,11 +341,25 @@ if __name__ == "__main__":
             while True:
                 n += 1
                 t += len(i)
-                i = yield f"BATCH: {n}/{total}\nPROCESSED: {t}\nCOST: {perf_counter() - start_t:.6f} s\n"
+                i = yield f"""\
+BATCH: {n}/{total}
+PROCESSED: {t}
+COST: {perf_counter() - start_t:.6f} s
+"""
         except StopIteration:
-            return f"[FAILED] PROCESSED PARTIAL\n    BATCHS: {n}\n    TOTAL: {t}\n    COST: {perf_counter() - start_t:.6f} s\n"
+            return f"""\
+[FAILED] PROCESSED PARTIAL
+    BATCHS: {n}
+    TOTAL: {t}
+    COST: {perf_counter() - start_t:.6f} s
+"""
         except GeneratorExit:
-            return f"[SUCCESS] PROCESSED ALL\n    BATCHS: {n}\n    TOTAL: {t}\n    COST: {perf_counter() - start_t:.6f} s\n"
+            return f"""\
+[SUCCESS] PROCESSED ALL
+    BATCHS: {n}
+    TOTAL: {t}
+    COST: {perf_counter() - start_t:.6f} s
+"""
 
     print("😄 process 10 elements")
     for _ in print_iter(range(10), partial(gen_count_time, total=10)):

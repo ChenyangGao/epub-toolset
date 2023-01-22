@@ -5,7 +5,7 @@
 # TODO: 如果文件名里面有空格呢
 
 __author__ = "ChenyangGao <https://chenyanggao.github.io/>"
-__version__ = (0, 0, 1)
+__version__ = (0, 0, 2)
 
 import sys
 
