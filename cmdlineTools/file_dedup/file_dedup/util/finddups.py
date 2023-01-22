@@ -77,16 +77,16 @@ def find_dup_files(
 def find_dup_files_by_size_md5(
     *dirs: bytes | str | PathLike, 
     show_progress: bool = False, 
-    filter_func: None | Callable[[DirEntry], bool] = None, 
+    filterfn: None | Callable[[DirEntry], bool] = None, 
     followlinks: bool = False, 
 ) -> Generator[tuple[FileSizeMd5, list[FileInfo]], None, None]:
     return find_dup_files(
         *dirs, 
         key=lambda p: FileSizeMd5(p.size, p.md5), 
         fileinfo_iter=partial(
-            FileInfo.iter, 
+            FileInfo.walk, 
             skip_oserror=True, 
-            filter_func=filter_func, 
+            filterfn=filterfn, 
             followlinks=followlinks, 
         ), 
         show_progress=show_progress, 

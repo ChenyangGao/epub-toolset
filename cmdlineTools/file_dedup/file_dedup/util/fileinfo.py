@@ -8,10 +8,11 @@ __all__ = ["FileInfo"]
 from hashlib import algorithms_available
 from os import fsdecode, stat, stat_result, DirEntry, PathLike
 from os.path import basename, dirname, splitext, isdir
-from typing import Any, Callable, Generator, Type, TypeVar
+from pathlib import Path
+from typing import Any, AnyStr, Callable, Generator, Type, TypeVar
 
 from util.filehash import filehash
-from util.iterpath import path_scan
+from util.iterpath import path_iter, path_walk
 from util.lazyproperty import lazyproperty
 
 
@@ -58,11 +59,23 @@ class FileInfo:
             return value
         raise ValueError(f"Hash algorithm name unavailable: {algname!r}")
 
+    def __eq__(self, other):
+        if type(self) is type(other):
+            return self.path == other.path
+        return False
+
+    def __hash__(self):
+        return hash(self.path)
+
     def __fspath__(self):
         return self.path
 
     def __repr__(self) -> str:
-        return f"{type(self).__module__}.{type(self).__qualname__}({self.path!r})"
+        modname = type(self).__module__
+        if modname == "__main__":
+            return f"{type(self).__qualname__}({self.path!r})"
+        else:
+            return f"{modname}.{type(self).__qualname__}({self.path!r})"
 
     def __getattr__(self, name: str, /):
         if name in algorithms_available:
@@ -81,28 +94,63 @@ class FileInfo:
     @classmethod
     def iter(
         cls: Type[T], /, 
-        path: bytes | str | PathLike = ".", 
-        filter_func: None | Callable[[DirEntry], bool] = None, 
-        followlinks: bool = False, 
-        onerror: None | Callable[[BaseException], Any] = None, 
+        dir_: AnyStr | PathLike[AnyStr] = ".", # type: ignore
+        followlinks: bool = True, 
+        filterfn: None | Callable[[Path], bool] = None, 
+        skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
+        depth_first: bool = False, 
+        lazy: bool = True, 
     ) -> Generator[T, None, None]:
         """
         """
-        if not isdir(path):
-            raise NotADirectoryError(path)
-        paths = path_scan(
-            path, # type: ignore
-            filter_func=filter_func, 
+        if not isdir(dir_):
+            raise NotADirectoryError(dir_)
+        paths = path_iter(
+            dir_, 
+            followlinks=followlinks, 
+            filterfn=filterfn, 
+            skiperrors=skiperrors, 
+            depth_first=depth_first, 
+            lazy=lazy, 
+        )
+        for p in filter(Path.is_file, paths):
+            try:
+                yield cls(p)
+            except KeyboardInterrupt:
+                raise
+            except BaseException as exc:
+                if skiperrors and callable(exc) and skiperrors(exc) or not isinstance(exc, skiperrors): # type: ignore
+                    raise
+
+    @classmethod
+    def walk(
+        cls: Type[T], /, 
+        dir_: AnyStr | PathLike[AnyStr] = ".", # type: ignore
+        followlinks: bool = True, 
+        onerror: None | Callable[[BaseException], Any] = None, 
+        topdown: bool = True, 
+        filterfn: None | Callable[[AnyStr], bool] = None, 
+        filter_by_name: bool = False, 
+    ) -> Generator[T, None, None]:
+        """
+        """
+        if not isdir(dir_):
+            raise NotADirectoryError(dir_)
+        paths = path_walk(
+            dir_, 
             followlinks=followlinks, 
             onerror=onerror, 
+            topdown=topdown, 
+            filterfn=filterfn, 
+            filter_by_name=filter_by_name, 
+            only_files=True, 
         )
         for p in paths:
-            if p.is_file(followlinks=followlinks):
-                try:
-                    yield cls(p)
-                except KeyboardInterrupt:
+            try:
+                yield cls(p)
+            except KeyboardInterrupt:
+                raise
+            except BaseException as exc:
+                if onerror and onerror(exc):
                     raise
-                except BaseException as exc:
-                    if not (onerror is None or onerror(exc) is None):
-                        raise
 

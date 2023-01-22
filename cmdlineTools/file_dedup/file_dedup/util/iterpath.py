@@ -7,10 +7,18 @@ __all__ = ["path_iter", "path_scan", "path_recur", "path_walk"]
 
 from collections import deque
 from functools import update_wrapper
-from os import fsdecode, listdir, scandir, walk, DirEntry, PathLike
-from os.path import isdir, islink, join
-from typing import cast, Any, AnyStr, Callable, Generator, Iterable
+from os import (
+    fsdecode, listdir, scandir, walk, DirEntry, PathLike
+)
+from os.path import isdir, isfile, islink, join
+from typing import (
+    cast, Any, AnyStr, Callable, Generator, Iterable, 
+    Sequence, TypeVar, 
+)
 from pathlib import Path
+
+
+P = TypeVar("P", bytes, str, PathLike[bytes], PathLike[str])
 
 
 def _check_dir(fn, /):
@@ -22,181 +30,147 @@ def _check_dir(fn, /):
 
 
 @_check_dir
+def path_iterate(
+    iterate: Callable[[AnyStr | PathLike[AnyStr]], Iterable[P]], 
+    dir_: AnyStr | PathLike[AnyStr] = ".", # type: ignore
+    /, 
+    followlinks: bool = True, 
+    filterfn: None | Callable[[P], bool] = None, 
+    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
+    depth_first: bool = False, 
+    lazy: bool = True, 
+) -> Generator[P, None, None]:
+    """
+    """
+    def iterdir(dir_: AnyStr | PathLike[AnyStr]) -> Iterable[P]:
+        paths: Iterable[P]
+        try:
+            paths = iterate(dir_)
+        except BaseException as exc:
+            if skiperrors and callable(exc) and skiperrors(exc) or not isinstance(exc, skiperrors): # type: ignore
+                raise
+            return ()
+        else:
+            if not lazy and not isinstance(paths, Sequence):
+                paths = tuple(paths)
+            if not followlinks:
+                paths = (p for p in paths if not islink(p))
+            if filterfn:
+                paths = filter(filterfn, paths)
+            return paths
+
+    if depth_first:
+        for p in iterdir(dir_):
+            yield p
+            if isdir(p):
+                yield from path_iterate(
+                    iterate, p, 
+                    followlinks=followlinks, 
+                    filterfn=filterfn, 
+                    skiperrors=skiperrors, 
+                    depth_first=depth_first, 
+                    lazy=lazy, 
+                )
+    else:
+        dq: deque[Any] = deque((dir_,))
+        get, put = dq.popleft, dq.append
+        while dq:
+            dir_ = get()
+            for p in iterdir(dir_):
+                yield p
+                if isdir(p):
+                    put(p)
+
+
+@_check_dir
 def path_iter(
     dir_: AnyStr | PathLike[AnyStr] = ".", # type: ignore
     /, 
-    filter_func: None | Callable[[Path], bool] = None, 
     followlinks: bool = True, 
-    onerror: None | Callable[[BaseException], Any] = None, 
-    lazy: bool = True, 
+    filterfn: None | Callable[[AnyStr], bool] = None, 
+    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
     depth_first: bool = False, 
+    lazy: bool = True, 
 ) -> Generator[Path, None, None]:
     """
     """
-    if isinstance(dir_, Path):
-        dir2 = dir_
-    else:
-        dir2 = Path(fsdecode(dir_))
-
-    def iterdir(dir_: Path) -> Iterable[Path]:
-        paths: Iterable[Path]
-        try:
-            paths = dir_.iterdir()
-        except BaseException as exc:
-            if not (onerror is None or onerror(exc) is None):
-                raise
-        else:
-            if filter_func:
-                paths = filter(filter_func, paths)
-            if not lazy:
-                paths = tuple(paths)
-            yield from paths
-
-    if depth_first:
-        for p in iterdir(dir2):
-            yield p
-            if p.is_dir() and (not p.is_symlink() or followlinks):
-                yield from path_iter(
-                    p, 
-                    filter_func=filter_func, 
-                    followlinks=followlinks, 
-                    onerror=onerror, 
-                    lazy=lazy, 
-                    depth_first=depth_first, 
-                )
-    else:
-        dq = deque((dir2,))
-        get, put = dq.popleft, dq.append
-        while dq:
-            dir2 = get()
-            for p in iterdir(dir2):
-                yield p
-                if p.is_dir() and (not p.is_symlink() or followlinks):
-                    put(p)
+    return path_iterate.__wrapped__(
+        Path.iterdir, 
+        Path(fsdecode(dir_)), 
+        followlinks=followlinks, 
+        filterfn=filterfn, 
+        skiperrors=skiperrors, 
+        depth_first=depth_first, 
+        lazy=lazy, 
+    )
 
 
 @_check_dir
 def path_scan(
     dir_: AnyStr | PathLike[AnyStr] = ".", # type: ignore
     /, 
-    filter_func: None | Callable[[DirEntry[AnyStr]], bool] = None, 
     followlinks: bool = True, 
-    onerror: None | Callable[[BaseException], Any] = None, 
-    lazy: bool = True, 
+    filterfn: None | Callable[[AnyStr], bool] = None, 
+    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
     depth_first: bool = False, 
+    lazy: bool = True, 
 ) -> Generator[DirEntry[AnyStr], None, None]:
     """
     """
-    def iterdir(dir_: AnyStr | PathLike[AnyStr]) -> Iterable[DirEntry[AnyStr]]:
-        paths: Iterable[DirEntry[AnyStr]]
-        try:
-            paths = scandir(dir_)
-        except BaseException as exc:
-            if not (onerror is None or onerror(exc) is None):
-                raise
-        else:
-            if filter_func:
-                paths = filter(filter_func, paths)
-            if not lazy:
-                paths = tuple(paths)
-            yield from paths
-
-    if depth_first:
-        for p in iterdir(dir_):
-            yield p
-            if p.is_dir() and (not p.is_symlink() or followlinks):
-                yield from path_scan(
-                    p, 
-                    filter_func=filter_func, 
-                    followlinks=followlinks, 
-                    onerror=onerror, 
-                    lazy=lazy, 
-                    depth_first=depth_first, 
-                )
-    else:
-        dq = deque((dir_,))
-        get, put = dq.popleft, dq.append
-        while dq:
-            dir_ = get()
-            for p in iterdir(dir_):
-                yield p
-                if p.is_dir() and (not p.is_symlink() or followlinks):
-                    put(p)
+    return path_iterate.__wrapped__(
+        scandir, 
+        dir_, 
+        followlinks=followlinks, 
+        filterfn=filterfn, 
+        skiperrors=skiperrors, 
+        depth_first=depth_first, 
+        lazy=lazy, 
+    )
 
 
 @_check_dir
 def path_recur(
     dir_: AnyStr | PathLike[AnyStr] = ".", # type: ignore
     /, 
-    filter_func: None | Callable[[AnyStr], bool] = None, 
-    filter_by_name: bool = False, 
     followlinks: bool = True, 
-    onerror: None | Callable[[BaseException], Any] = None, 
+    filterfn: None | Callable[[AnyStr], bool] = None, 
+    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
     depth_first: bool = False, 
-) -> Generator[AnyStr, None, None]:
+    lazy: bool = True, 
+) -> Generator[DirEntry[AnyStr], None, None]:
     """
     """
-    def iterdir(dir_: AnyStr | PathLike[AnyStr]) -> Iterable[AnyStr]:
-        paths: Iterable[AnyStr]
-        try:
-            paths = listdir(dir_)
-        except BaseException as exc:
-            if not (onerror is None or onerror(exc) is None):
-                raise
-        else:
-            if filter_by_name:
-                if filter_func:
-                    paths = filter(filter_func, paths)
-                for p in paths:
-                    yield join(dir_, p)
-            else:
-                paths = (join(dir_, p) for p in paths)
-                if filter_func:
-                    paths = filter(filter_func, paths)
-                yield from paths
-
-    if depth_first:
-        for p in iterdir(dir_):
-            yield p
-            if isdir(p) and (not islink(p) or followlinks):
-                yield from path_scan(
-                    p, 
-                    filter_func=filter_func, 
-                    followlinks=followlinks, 
-                    onerror=onerror, 
-                    depth_first=depth_first, 
-                )
-    else:
-        dq = deque((dir_,))
-        get, put = dq.popleft, dq.append
-        while dq:
-            dir_ = get()
-            for p in iterdir(dir_):
-                yield p
-                if isdir(p) and (not islink(p) or followlinks):
-                    put(p)
+    return path_iterate.__wrapped__(
+        lambda dir_: (join(dir_, p) for p in listdir(dir_)), 
+        dir_, 
+        followlinks=followlinks, 
+        filterfn=filterfn, 
+        skiperrors=skiperrors, 
+        depth_first=depth_first, 
+        lazy=lazy, 
+    )
 
 
 @_check_dir
 def path_walk(
     dir_: AnyStr | PathLike[AnyStr] = ".", # type: ignore
     /, 
-    filter_func: None | Callable[[AnyStr], bool] = None, 
-    filter_by_name: bool = False, 
     followlinks: bool = True, 
     onerror: None | Callable[[BaseException], Any] = None, 
     topdown: bool = True, 
+    filterfn: None | Callable[[AnyStr], bool] = None, 
+    filter_by_name: bool = False, 
     only_files: bool = False, 
 ) -> Generator[AnyStr, None, None]:
     """
     """
     it = walk(
         dir_, 
-        topdown=topdown, 
-        onerror=onerror, 
         followlinks=followlinks, 
+        onerror=onerror, 
+        topdown=topdown, 
     )
-    if filter_func is None:
+    if filterfn is None:
         for dirpath, dirnames, filenames in it:
             if not only_files:
                 yield from (join(dirpath, name) for name in dirnames)
@@ -205,15 +179,15 @@ def path_walk(
         for dirpath, dirnames, filenames in it:
             if not only_files:
                 yield from (join(dirpath, name) 
-                    for name in dirnames if filter_func(name))
+                    for name in dirnames if filterfn(name))
             yield from (join(dirpath, name) 
-                for name in filenames if filter_func(name))
+                for name in filenames if filterfn(name))
     else:
         for dirpath, dirnames, filenames in it:
             if not only_files:
-                yield from filter(filter_func, 
+                yield from filter(filterfn, 
                     (join(dirpath, name) for name in dirnames))
-            yield from filter(filter_func, 
+            yield from filter(filterfn, 
                 (join(dirpath, name) for name in filenames))
 
 
@@ -224,7 +198,7 @@ if __name__ == "__main__":
         if isdir(path):
             for subpath in path_walk(
                 path, 
-                filter_func=lambda x: not x.startswith('.'), 
+                filterfn=lambda x: not x.startswith('.'), 
                 filter_by_name=True, 
                 only_files=True, 
             ):
