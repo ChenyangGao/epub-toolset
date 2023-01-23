@@ -32,3 +32,10 @@ except AttributeError:
             "Issue an error: can not open the path."
             raise NotImplementedError("Can't open the path %r" % path)
 
+
+if __name__ == "__main__":
+    from sys import argv
+
+    for p in argv[1:]:
+        openpath(p)
+

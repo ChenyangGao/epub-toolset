@@ -21,7 +21,10 @@ def groupdict(
     d: dict[K, list[T]] = {}
     df: dict[K, Callable] = {}
     for i in it:
-        k = key(i)
+        try:
+            k = key(i)
+        except Exception as exc:
+            raise ValueError(f"Can't get the key of {i!r}") from exc
         try:
             df[k](i)
         except KeyError:

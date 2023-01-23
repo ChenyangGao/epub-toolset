@@ -3,7 +3,10 @@
 
 __author__ = "ChenyangGao <https://chenyanggao.github.io/>"
 __version__ = (0, 0, 2)
-__all__ = ["path_iter", "path_scan", "path_recur", "path_walk"]
+__all__ = [
+    "path_iterate", "path_iter", "path_scan", "path_recur", 
+    "path_walk", 
+]
 
 from collections import deque
 from functools import update_wrapper

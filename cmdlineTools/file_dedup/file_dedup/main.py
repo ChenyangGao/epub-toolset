@@ -3,15 +3,15 @@
 
 # TODO: 允许过滤掉某些文件夹或文件名
 # TODO: 如果文件名里面有空格呢
-# TODO: 支持读取标准输入（支持管道）作为输入
 # TODO: 支持 A 和 B 做比较，如果 B 中有和 A 中 key 相同的文件，删除之
-# TODO: 有一些文件是删除失败的，找出原因
-# TODO: 支持参数，用remove还是removedirs
+# TODO: 选择哪些文件删除时，支持网页版
+# TODO: 支持过滤掉隐藏文件和文件夹
 
 __author__ = "ChenyangGao <https://chenyanggao.github.io/>"
 __version__ = (0, 0, 2)
 __all__ = ["main"]
 
+import sys
 
 from io import StringIO, TextIOBase
 from os import remove, PathLike
@@ -25,6 +25,7 @@ from util.fileinfo import FileInfo
 from util.finddups import find_dup_files_by_size_md5, FileSizeMd5
 from util.openpath import openpath
 from util.progress import output, clear_lines
+from util.stdinutil import input2
 
 
 write = stdout.write
@@ -48,7 +49,7 @@ def dumps_duplicate_files_to_be_deleted(
 
 
 def parse_duplicate_files_to_be_deleted(
-    dumps: str | TextIOBase = stdin, /
+    dumps: str | TextIOBase = stdin, / # type: ignore
 ) -> Generator[str, None, None]:
     f: TextIOBase = StringIO(dumps) if isinstance(dumps, str) else dumps
     for line in f:
@@ -57,8 +58,8 @@ def parse_duplicate_files_to_be_deleted(
         yield line.removesuffix("\n")
 
 
-def main(argv: list[str]):
-    dumps = dumps_duplicate_files_to_be_deleted(*argv[1:])
+def main(paths):
+    dumps = dumps_duplicate_files_to_be_deleted(*paths)
     if not dumps:
         #print("😄 There are no duplicate files")
         write("😄 没有重复文件\n")
@@ -75,9 +76,10 @@ def main(argv: list[str]):
             openpath(temppath)
         except:
             pass
-        resp = input("需要进行删除吗？[Y]/n ").strip()
+        resp = input2("需要进行删除吗？[Y]/n ").strip()
         n_succ = n_fail = 0
         last_nlines = 0
+        failures = []
         if resp in ("y", "Y", ""):
             paths = tuple(parse_duplicate_files_to_be_deleted(
                 open(temppath, encoding="utf-8")))
@@ -88,13 +90,19 @@ def main(argv: list[str]):
                     remove(path)
                     n_succ += 1
                     write(f"DELETED {path!r}\n")
-                except OSError:
+                except OSError as exc:
                     n_fail += 1
                     write(f"?FAILED {path!r}\n")
+                    failures.append((path, exc))
                 last_nlines = output(f"""
 \x1b[38;5;15m\x1b[48;5;1m\x1b[5mPROCESSING\x1b[0m success: \x1b[1m{n_succ}\x1b[0m / failed: \x1b[1m{n_fail}\x1b[0m / total: \x1b[1m{total}\x1b[0m
 """)
             clear_lines(last_nlines)
+            if failures:
+                write("\n\x1b[5m😢\x1b[0m \x1b[38;5;15m\x1b[48;5;1mThe failures list below:\x1b[0m\n")
+                for path, exc_ in failures:
+                    write(f"{path!r}\n")
+                    write(f"    |_ {exc_!r}\n")
             output(f"""
 \x1b[38;5;15m\x1b[48;5;2m\x1b[5mRESULT\x1b[0m success: \x1b[1m{n_succ}\x1b[0m / failed: \x1b[1m{n_fail}\x1b[0m / total: \x1b[1m{total}\x1b[0m
 """)
@@ -106,5 +114,5 @@ def main(argv: list[str]):
 
 
 if __name__ == "__main__":
-    main(argv)
+    main(argv[1:])
 

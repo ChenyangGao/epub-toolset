@@ -52,7 +52,7 @@ def mfilehash(
     path: bytes | str | PathLike, 
     algnames_may_with_salt: tuple[str | tuple[str, bytes], ...] = ("md5",), 
     buffsize: int = DEFAULT_BUFFER_SIZE, 
-) -> tuple[str, ...]:
+) -> list[tuple[str, str]]:
     """Calculate multiple hash values of the file.
 
     :param path: The file path.
@@ -73,6 +73,10 @@ def mfilehash(
         hash_new(args) if isinstance(args, str) else hash_new(*args)
         for args in algnames_may_with_salt 
     ]
+    hashalgs = [
+        args if isinstance(args, str) else args[0]
+        for args in algnames_may_with_salt 
+    ]
     file = open(path, "rb", buffering=0)
     if buffsize <= 0 or getsize(path) <= buffsize:
         for hashobj in hashobjs:
@@ -89,5 +93,73 @@ def mfilehash(
                 break
             for update in updates:
                 update(buf)
-    return tuple(h.hexdigest() for h in hashobjs)
+    return list(zip(hashalgs, (h.hexdigest() for h in hashobjs)))
+
+
+if __name__ == "__main__":
+    from argparse import ArgumentParser, RawTextHelpFormatter
+    from hashlib import algorithms_available
+    from itertools import chain
+    from os.path import isdir
+    from sys import stdin
+
+    from iterpath import path_walk # type: ignore
+
+    parser = ArgumentParser(description="计算文件 hash", formatter_class=RawTextHelpFormatter)
+    parser.add_argument(
+        "paths", metavar="path", nargs="*", 
+        help="路径列表，如有多个请用空格隔开")
+    parser.add_argument(
+        "-v", "--verbose", "--show-filenames", dest="show_filenames", action="store_true", 
+        help="输出文件名")
+    parser.add_argument(
+        "-vv", "--super_verbose", "--show-algnames", dest="show_algnames", action="store_true", 
+        help="输出文件名和算法名")
+    parser.add_argument(
+        "-a", "--algnames", nargs="+", default=["md5"], 
+        help=f"指定所用的 hash 算法，默认为 md5，目前可选：\n{algorithms_available}")
+
+    args = parser.parse_args()
+    if not args.paths and stdin.isatty():
+        parser.parse_args(["-h"])
+
+    paths = args.paths
+    show_filenames = args.show_filenames
+    show_algnames = args.show_algnames
+    algnames = args.algnames
+    algorithms_unavailable = set(algnames) - algorithms_available
+
+    if algorithms_unavailable:
+        raise SystemExit(f"⚠️ 这些 hash 算法不可用：{algorithms_unavailable}")
+
+    paths = args.paths
+    if not stdin.isatty():
+        paths = chain((p for p in (p.removesuffix("\n") for p in stdin) if p), paths)
+    paths = chain.from_iterable(path_walk(p, only_files=True) if isdir(p) else (p,) for p in paths)
+
+    if len(algnames) == 1:
+        algname = algnames[0]
+        for p in paths:
+            try:
+                if show_filenames or show_algnames:
+                    print(f"# {p!r}")
+                if show_algnames:
+                    print(f"{algname}: {filehash(p, algname)}")
+                else:
+                    print(filehash(p, algname))
+            except OSError as exc:
+                print(f"# 😢 SKIPPED: {p}\n#    |_ {exc!r}")
+    else:
+        for p in paths:
+            try:
+                if show_filenames or show_algnames:
+                    print(f"# {p!r}")
+                if show_algnames:
+                    for algname, hash_s in mfilehash(p, algnames):
+                        print(f"{algname}: {hash_s}")
+                else:
+                    for _, hash_s in mfilehash(p, algnames):
+                        print(hash_s)
+            except OSError as exc:
+                print(f"# 😢 SKIPPED: {p}\n#    |_ {exc!r}")
 
