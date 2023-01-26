@@ -10,10 +10,11 @@ __all__ = [
 
 from collections import deque
 from functools import update_wrapper
+from itertools import chain
 from os import (
     fsdecode, listdir, scandir, walk, DirEntry, PathLike
 )
-from os.path import isdir, isfile, islink, join
+from os.path import isdir, isfile, islink, join, split
 from typing import (
     cast, Any, AnyStr, Callable, Generator, Iterable, 
     Sequence, TypeVar, 
@@ -39,7 +40,7 @@ def path_iterate(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[P], bool] = None, 
-    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
+    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[P, None, None]:
@@ -50,7 +51,7 @@ def path_iterate(
         try:
             paths = iterate(dir_)
         except BaseException as exc:
-            if skiperrors and callable(exc) and skiperrors(exc) or not isinstance(exc, skiperrors): # type: ignore
+            if skiperror and callable(exc) and skiperror(exc) or not isinstance(exc, skiperror): # type: ignore
                 raise
             return ()
         else:
@@ -70,7 +71,7 @@ def path_iterate(
                     iterate, p, 
                     followlinks=followlinks, 
                     filterfn=filterfn, 
-                    skiperrors=skiperrors, 
+                    skiperror=skiperror, 
                     depth_first=depth_first, 
                     lazy=lazy, 
                 )
@@ -91,7 +92,7 @@ def path_iter(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[AnyStr], bool] = None, 
-    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
+    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[Path, None, None]:
@@ -102,7 +103,7 @@ def path_iter(
         Path(fsdecode(dir_)), 
         followlinks=followlinks, 
         filterfn=filterfn, 
-        skiperrors=skiperrors, 
+        skiperror=skiperror, 
         depth_first=depth_first, 
         lazy=lazy, 
     )
@@ -114,7 +115,7 @@ def path_scan(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[AnyStr], bool] = None, 
-    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
+    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[DirEntry[AnyStr], None, None]:
@@ -125,7 +126,7 @@ def path_scan(
         dir_, 
         followlinks=followlinks, 
         filterfn=filterfn, 
-        skiperrors=skiperrors, 
+        skiperror=skiperror, 
         depth_first=depth_first, 
         lazy=lazy, 
     )
@@ -137,7 +138,7 @@ def path_recur(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[AnyStr], bool] = None, 
-    skiperrors: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException] = None, 
+    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[DirEntry[AnyStr], None, None]:
@@ -148,7 +149,7 @@ def path_recur(
         dir_, 
         followlinks=followlinks, 
         filterfn=filterfn, 
-        skiperrors=skiperrors, 
+        skiperror=skiperror, 
         depth_first=depth_first, 
         lazy=lazy, 
     )
@@ -175,37 +176,47 @@ def path_walk(
     )
     if filterfn is None:
         for dirpath, dirnames, filenames in it:
-            if not only_files:
-                yield from (join(dirpath, name) for name in dirnames)
-            yield from (join(dirpath, name) for name in filenames)
+            names = filenames if only_files else chain(dirnames, filenames)
+            for name in names:
+                yield join(dirpath, name)
     elif filter_by_name:
+        def skip_dir_with_check(dir_):
+            while dir_:
+                dir_, name = split(dir_)
+                if not filterfn(name):
+                    return True
+            return False
         for dirpath, dirnames, filenames in it:
-            if not only_files:
-                yield from (join(dirpath, name) 
-                    for name in dirnames if filterfn(name))
-            yield from (join(dirpath, name) 
-                for name in filenames if filterfn(name))
+            if skip_dir_with_check(dirpath):
+                continue
+            names = filenames if only_files else chain(dirnames, filenames)
+            yield from (join(dirpath, name) for name in names if filterfn(name))
     else:
+        def skip_dir_with_check(dir_):
+            while dir_:
+                if not filterfn(dir_):
+                    return True
+                dir_, _ = split(dir_)
+            return False
         for dirpath, dirnames, filenames in it:
-            if not only_files:
-                yield from filter(filterfn, 
-                    (join(dirpath, name) for name in dirnames))
-            yield from filter(filterfn, 
-                (join(dirpath, name) for name in filenames))
+            if skip_dir_with_check(dirpath):
+                continue
+            names = filenames if only_files else chain(dirnames, filenames)
+            yield from filter(filterfn, (join(dirpath, name) for name in names))
 
 
 if __name__ == "__main__":
+    from os import fspath
+    from os.path import isdir
     from sys import argv
 
     for path in argv[1:]:
         if isdir(path):
-            for subpath in path_walk(
+            for subpath in filter(isdir, path_scan(
                 path, 
-                filterfn=lambda x: not x.startswith('.'), 
-                filter_by_name=True, 
-                only_files=True, 
-            ):
-                print(subpath)
+                filterfn=lambda x: not x.name.startswith('.'), 
+            )):
+                print(fspath(subpath))
         else:
             print(path)
 

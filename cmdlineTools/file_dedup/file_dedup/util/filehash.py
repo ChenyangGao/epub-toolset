@@ -116,7 +116,7 @@ if __name__ == "__main__":
         "-vv", "--super_verbose", "--show-algnames", dest="show_algnames", action="store_true", 
         help="输出文件名和算法名")
     parser.add_argument(
-        "-a", "--algnames", nargs="+", default=["md5"], 
+        "-a", "--algnames", nargs="+", default=["md5"], choices=algorithms_available, 
         help=f"指定所用的 hash 算法，默认为 md5，目前可选：\n{algorithms_available}")
 
     args = parser.parse_args()
@@ -124,18 +124,12 @@ if __name__ == "__main__":
         parser.parse_args(["-h"])
 
     paths = args.paths
-    show_filenames = args.show_filenames
-    show_algnames = args.show_algnames
-    algnames = args.algnames
-    algorithms_unavailable = set(algnames) - algorithms_available
-
-    if algorithms_unavailable:
-        raise SystemExit(f"⚠️ 这些 hash 算法不可用：{algorithms_unavailable}")
-
-    paths = args.paths
     if not stdin.isatty():
         paths = chain((p for p in (p.removesuffix("\n") for p in stdin) if p), paths)
     paths = chain.from_iterable(path_walk(p, only_files=True) if isdir(p) else (p,) for p in paths)
+    show_filenames = args.show_filenames
+    show_algnames = args.show_algnames
+    algnames = args.algnames
 
     if len(algnames) == 1:
         algname = algnames[0]
