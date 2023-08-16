@@ -1,86 +1,118 @@
-__author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 4)
+#!/usr/bin/env python3
+# coding: utf-8
 
-from lxml.html import tostring
+__author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
+__version__ = (0, 0, 5)
+
+import posixpath
+
+from itertools import chain
+from urllib.parse import urlsplit
+from lxml.html import fromstring
 
 from utils.form import AskForm
 from utils.edithtml import DoNotWriteBack, ctx_edit_html
 
 
-def replace_notelabel(el, text):
+def replace_el_inner(el, text, config):
     '修改脚注的标签'
-    while el.tag != 'a':
-        a = el.find('.//a')
-        if a is None:
-            el = el.getparent()
-            if el is None:
-                return
-        else:
-            el = a
+    is_as_elements = config['is_as_elements']
+    is_clear_element = config['is_clear_element']
+    if is_clear_element:
+        el.clear(keep_tail=True)
+    if is_as_elements:
+        div = fromstring('<div>%s</div>' % text)
+        if div.text:
+            el.text = div.text
+        for i, cel in enumerate(div.getchildren()):
+            el.insert(i, cel)
+    else:
+        el.text = text
 
-    while len(el):
-        el = el[0]
 
-    el.text = text
+def iter_href_ids(el, basename, use_descendants=True, use_ancestors=False):
+    '''帮助函数，用于获取这个元素的上下文（自己，前驱，后继）中 a 元素的 href 
+    属性锚向的在同一文件中的 id'''
+    els = (el,)
+    if use_descendants:
+        els = chain(els, el.xpath('descendant::a[@href]'))
+    if use_ancestors:
+        els = chain(els, el.iterancestors('a'))
+    for el in els:
+        href = el.attrib.get('href')
+        if not href:
+            continue
+        href_split = urlsplit(href)
+        if (
+            href_split.scheme == ''
+            and href_split.fragment
+            and (
+                href_split.path == '' or 
+                posixpath.basename(href_split.path) == basename
+            )
+        ):
+            yield href_split.fragment
 
 
-def renumber_notes(
-    tree,
-    select,
-    start=1,
-    numfmt='[%d]',
-    only_modify_text=False,
-):
+def renumber_notes(href, tree, config, start=1):
     '批量对脚注标签进行编号'
     body = tree.body
-    notes = select(body)
+    refs = config['select'](body)
 
-    if not notes:
+    if not refs:
         raise DoNotWriteBack
 
-    i = None
-    for i, note in enumerate(notes, start):
-        noteno = numfmt % i
-        if only_modify_text:
-            note.text = noteno
+    numfmt = config['numfmt']
+    is_just_this_el = config['is_just_this_el']
+    basename = posixpath.basename(href)
+
+    n = start
+    for ref in refs:
+        num_str = numfmt.format(n, n=n)
+        if is_just_this_el: # NOTE: 不会检查是否相互引用
+            replace_el_inner(ref, num_str, config)
         else:
-            replace_notelabel(note, noteno)
-            note_href = note.attrib['href']
-            id_idx = note_href.find('#') + 1
-            if id_idx:
-                noteref_id = note_href[id_idx:]
-                noteref = body.find(".//*[@id='%s']" %noteref_id)
-                if noteref is None:
-                    print('没有（被）引用：', 
-                          tostring(note, encoding='utf-8').strip().decode('utf-8'))
-                else:
-                    replace_notelabel(noteref, noteno)
-    if i is None:
-        return start
-    return i + 1
+            top = ref
+
+            ids = {el.attrib['id'] for el in top.xpath('descendant-or-self::*[@id]')}
+            if not ids:
+                continue
+
+            href_to_ids = [*iter_href_ids(top, basename)]
+
+            if not href_to_ids:
+                continue
+
+            for refby_id in href_to_ids:
+                refby = body.find('.//*[@id="%s"]' %refby_id)
+                if (
+                    refby is not None and 
+                    any(el in ids for el in iter_href_ids(refby, basename, True, True))
+                ):
+                    replace_el_inner(refby, num_str, config)
+                    break
+            else:
+                continue
+
+        n += 1
+
+    return n
 
 
 def run(bc):
-    state = AskForm.ask()
-    if not state:
+    config = AskForm.ask()
+    if not config or config['select'] == '!':
         print('已取消')
-        return 1
-
-    unique_strategy = state.pop('unique_strategy', 'inhtml')
-    if unique_strategy == 'inhtml':
-        for fid, href in bc.text_iter():
-            print('处理文件：', href)
-            with ctx_edit_html(bc, fid) as tree:
-                renumber_notes(tree, **state)
-    elif unique_strategy == 'inepub':
-        i = 1
-        for fid, href in bc.text_iter():
-            print('处理文件：', href)
-            with ctx_edit_html(bc, fid) as tree:
-                i = renumber_notes(tree, start=i, **state)
-    else:
-        raise ValueError("Unacceptable `unique_strategy`, expected value in "
-                         "('inhtml', 'inepub'), got %r" % unique_strategy)
-
+        return 0
+    is_global_num = config.pop('is_global_num', False)
+    n = 1
+    for fid, href in bc.text_iter():
+        with ctx_edit_html(bc, fid) as tree:
+            m = renumber_notes(href, tree, config, start=n)
+            if m == n:
+                raise DoNotWriteBack
+            print('改动文件：', href)
+            if is_global_num:
+                n = m
     return 0
 

@@ -17,7 +17,7 @@ from os import (
 from os.path import isdir, isfile, islink, join, split
 from typing import (
     cast, Any, AnyStr, Callable, Generator, Iterable, 
-    Sequence, TypeVar, 
+    Sequence, Type, TypeVar, 
 )
 from pathlib import Path
 
@@ -40,7 +40,7 @@ def path_iterate(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[P], bool] = None, 
-    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
+    skiperror: None | Callable[[BaseException], Any] | Type[BaseException] | tuple[Type[BaseException], ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[P, None, None]:
@@ -50,18 +50,23 @@ def path_iterate(
         paths: Iterable[P]
         try:
             paths = iterate(dir_)
-        except BaseException as exc:
-            if skiperror and callable(exc) and skiperror(exc) or not isinstance(exc, skiperror): # type: ignore
-                raise
-            return ()
-        else:
             if not lazy and not isinstance(paths, Sequence):
                 paths = tuple(paths)
             if not followlinks:
                 paths = (p for p in paths if not islink(p))
             if filterfn:
                 paths = filter(filterfn, paths)
-            return paths
+            yield from paths
+        except BaseException as exc:
+            if skiperror is None or skiperror is True:
+                pass
+            elif skiperror is False:
+                raise
+            elif callable(skiperror):
+                if not skiperror(exc):
+                    raise
+            elif not isinstance(exc, skiperror):
+                raise
 
     if depth_first:
         for p in iterdir(dir_):
@@ -92,7 +97,7 @@ def path_iter(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[AnyStr], bool] = None, 
-    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
+    skiperror: None | Callable[[BaseException], Any] | Type[BaseException] | tuple[Type[BaseException], ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[Path, None, None]:
@@ -115,7 +120,7 @@ def path_scan(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[AnyStr], bool] = None, 
-    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
+    skiperror: None | Callable[[BaseException], Any] | Type[BaseException] | tuple[Type[BaseException], ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[DirEntry[AnyStr], None, None]:
@@ -138,7 +143,7 @@ def path_recur(
     /, 
     followlinks: bool = True, 
     filterfn: None | Callable[[AnyStr], bool] = None, 
-    skiperror: None | Callable[[BaseException], Any] | BaseException | tuple[BaseException, ...] = None, 
+    skiperror: None | Callable[[BaseException], Any] | Type[BaseException] | tuple[Type[BaseException], ...] = None, 
     depth_first: bool = False, 
     lazy: bool = True, 
 ) -> Generator[DirEntry[AnyStr], None, None]:

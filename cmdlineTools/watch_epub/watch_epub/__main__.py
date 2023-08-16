@@ -5,6 +5,7 @@ __author__  = "ChenyangGao <https://chenyanggao.github.io/>"
 __version__ = (0, 1, 5)
 __all__ = []
 
+# TODO: 应该提供一个text，这样还有注释可以看到
 # Refer to the rules of [gitignore](https://git-scm.com/docs/gitignore)
 IGNORES = [".DS_Store", "._*", "Thumb.store", "desktop.ini", ".*.sw[px]", ".*.swpx"]
 
@@ -44,7 +45,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--inplace", action="store_true", 
         help="覆盖原来的文件。不指定此参数（默认行为）时，会生成一个新文件，而不是覆盖。")
     parser.add_argument("-d", "--debug", action="store_true", 
-        help="启用调试信息。如果指定此参数，会将日志级别设置为 DEBUG（否则，默认为 INFO）。")
+        help="启用调试信息。如果指定此参数，则会将日志级别设置为 DEBUG（否则，默认为 INFO）。")
     makeid_default = next(iter(TYPE_TO_MAKEID))
     parser.add_argument("-m", "--makeid", default=makeid_default, choices=TYPE_TO_MAKEID, 
         help="新文件在 OPF 中的 id。可选以下值，默认为 %s：" % makeid_default + "".join(

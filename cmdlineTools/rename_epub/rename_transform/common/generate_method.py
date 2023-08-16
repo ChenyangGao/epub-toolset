@@ -36,6 +36,9 @@ BASE4CHARS = r':*|_'
 NAME_GENERATORS = {}
 
 
+# TODO: 允许在命令行传入函数，名字叫do，我用exec进行解析，之后使用，函数接收几个参数：manifest_id, 相对路径，文件名，二进制数据
+# TODO: 一些模块进行重构，以进行简化，目前的代码量太多了，例如util/path.py模块就可以完全改掉
+
 def register(fn=None, *, name=None):
     '把函数注册到文件名生成器中（模块全局变量 NAME_GENERATORS）'
     if fn is None:

@@ -1,6 +1,9 @@
 #! /usr/bin/env python3
 # coding: utf-8
 
+# TODO 现在代码量太多了，要尽量做简化
+# TODO 文件名转换，可以做很多事情，甚至应该支持从命令行自己传递一个名字生成办法，还应该支持半角转全角
+# TODO 如果可以的话，这个程序应该是单文件的，并且加上注解
 
 from common.parser import make_parser
 PARSER = make_parser()
@@ -30,6 +33,7 @@ from util.path import relative_path, add_stem_suffix
 from common.generate_method import NAME_GENERATORS, make_generator, make_bcp_generator
 
 
+# TODO 下面的正则表达式模式太多了，删掉几个
 ENCRYPTION_XML = cast(bytes, get_data('src', 'encryption.xml'))
 METHODS_LIST = list(NAME_GENERATORS.values())
 
@@ -48,6 +52,7 @@ CRE_INLINE_STYLE: Final[Pattern] = re_compile(
     r'<[^/][^>]*?\sstyle="([^"]+)"')
 
 
+# TODO 下面的帮助函数，太复杂了，而且还和 zipfile 有关，设法脱离
 def get_elnode_attrib(elnode: Union[bytes, str, Element], /) -> dict:
     '获取一个 xml/xhtml 标签的属性值'
     if not isinstance(elnode, Element):
@@ -57,11 +62,13 @@ def get_elnode_attrib(elnode: Union[bytes, str, Element], /) -> dict:
 
 def get_opf_path(epub_zipfile: ZipFile, /) -> str:
     '获取 ePub 文件中的 OPF 文件的路径'
+    # TODO 不应该 decode，直接 bytes 也能处理
     content = epub_zipfile.read('META-INF/container.xml').decode()
     etree = fromstring(content)
     for el in etree.iter():
         if (
             (el.tag == 'rootfile' or el.tag.endswith('}rootfile')) 
+            # TODO 下面的代码还需要再想一下，这个 media-type 覆盖全了没有，附上规范文档链接
             and el.attrib.get('media-type') == 'application/oebps-package+xml'
         ):
             return unquote(el.attrib['full-path'])
@@ -91,6 +98,7 @@ def get_opf_itemmap(
     }
 
 
+# TODO 这个函数不错，想办法看起来更清晰一些，而且速度更快一些
 def make_repl_map(
     itemmap: dict, 
     generate: Callable[..., str], 
@@ -101,6 +109,7 @@ def make_repl_map(
     repl_map: Dict[str, str] = {}
     key_map:  Dict[Tuple[str, str, str], str] = {}
 
+    # TODO 被迭代的代码块，移到专门的函数中去
     for href, attrib in itemmap.items():
         if attrib['media-type'] == 'application/x-dtbncx+xml':
             continue

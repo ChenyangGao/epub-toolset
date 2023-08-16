@@ -49,9 +49,9 @@ def makeid_bookpath(href, bookpath):
     return bookpath
 
 
-@register("uuid")
-def makeid_uuid(href=None, bookpath=None):
-    "4 位 UUID"
+@register("uuid4")
+def makeid_uuid4(href=None, bookpath=None):
+    "UUID (Universally Unique Identifier) version 4 generator"
     return str(uuid4())
 
 
