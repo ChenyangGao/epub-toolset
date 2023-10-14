@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin>
+<name>sigil-runpy-config</name>
+<type>output</type>
+<author>ChenyangGao(https://chenyanggao.github.io/)</author>
+<description>Configure the sigil-runpy plugin</description>
+<engine>python3.4</engine>
+<version>0.0.1</version>
+<autostart>true</autostart>
+<autoclose>true</autoclose>
+<oslist>osx,win,unx</oslist>
+</plugin>

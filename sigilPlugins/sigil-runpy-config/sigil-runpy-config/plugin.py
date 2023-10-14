@@ -1,6 +1,7 @@
-__author__  = 'ChenyangGao <https://chenyanggao.github.io/>'
-__version__ = (0, 0, 1)
+#!/usr/bin/env python3
+# coding: utf-8
 
+__author__  = "ChenyangGao <https://chenyanggao.github.io/>"
 
 import sys
 
@@ -71,24 +72,24 @@ class MainWidget(QMainWindow):
 
     def __init__(self, config):
         super().__init__()
-        self.setWindowTitle('添加Python脚本路径')
+        self.setWindowTitle("Please drag-and-drop some Python scripts in")
         ddlist = self.ddlist = DragDropList(self)
-        ddlist.addItems(config['path'])
+        ddlist.addItems(config["path"])
         self.setCentralWidget(ddlist)
         self.config = config
 
     def closeEvent(self, event):
         ddlist = self.ddlist
-        self.config['path'] = [ddlist.item(i).text() for i in range(ddlist.count())]
+        self.config["path"] = [ddlist.item(i).text() for i in range(ddlist.count())]
         event.accept()
 
 
 def run(bc):
     prefs = bc.getPrefs()
-    if 'config' not in prefs:
-        prefs['config'] = {'path': []}
+    if "config" not in prefs:
+        prefs["config"] = {"path": []}
     app = QApplication(sys.argv)
-    m = MainWidget(prefs['config'])
+    m = MainWidget(prefs["config"])
     m.show()
     retcode = app.exec_()
     if retcode == 0:
